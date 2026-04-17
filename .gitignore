@@ -1,0 +1,15 @@
+# 忽略 Python 虚拟环境 (这是最占文件数的地方)
+venv/
+.venv/
+env/
+
+# 忽略缓存
+**/__pycache__/
+*.py[cod]
+
+# 忽略 VS Code 自己的配置
+.vscode/
+
+# 如果你做 GNN 或 AGV 调度有大型数据或日志
+*.log
+data/

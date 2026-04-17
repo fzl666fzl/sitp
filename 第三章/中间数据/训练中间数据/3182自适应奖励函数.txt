@@ -1,0 +1,519 @@
+{
+    "os": "Linux-3.10.0-1160.el7.x86_64-x86_64-with-glibc2.17",
+    "python": "3.8.15",
+    "heartbeatAt": "2023-12-06T08:31:50.497056",
+    "startedAt": "2023-12-06T08:31:49.267002",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/home/wyl/airassemble/assembleqmix.py",
+    "codePath": "airassemble/assembleqmix.py",
+    "host": "localhost.localdomain",
+    "username": "wyl",
+    "executable": "/home/wyl/anaconda3/envs/maddpg/bin/python",
+    "cpu_count": 48,
+    "cpu_count_logical": 96,
+    "cpu_freq": {
+        "current": 1030.1192499999995,
+        "min": 1000,
+        "max": 4000
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1012.182,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 2819.152,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.426,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1007.08,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.366,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1023.461,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1094.36,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.366,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1003.186,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.5,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1026.415,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1028.564,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1039.575,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1009.631,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1052.197,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1031.115,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1029.369,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1030.175,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1031.787,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1089.392,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1029.234,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1001.037,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1001.171,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1595.214,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.366,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1002.246,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1005.334,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.769,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1068.31,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.829,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.366,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.366,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1020.91,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.5,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.366,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 999.963,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.5,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.097,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1000.231,
+            "min": 1000,
+            "max": 4000
+        },
+        {
+            "current": 1174.255,
+            "min": 1000,
+            "max": 4000
+        }
+    ],
+    "disk": {
+        "total": 441.405460357666,
+        "used": 318.7177047729492
+    },
+    "gpu": "Tesla V100-PCIE-32GB",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "Tesla V100-PCIE-32GB",
+            "memory_total": 34089730048
+        }
+    ],
+    "memory": {
+        "total": 93.85052490234375
+    }
+}
