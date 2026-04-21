@@ -660,195 +660,141 @@ class RolloutWorker:
         print('Rollout Worker inited!')
 
 
-def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=False):
-        env = simpy.Environment()
-        o, u, r, s, o_,s_ = [], [], [], [], [], []
-        au, avail_u_, u_onehot, terminate, padded = [], [], [], [], []
+def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=False):
+    env = simpy.Environment()
+    o, u, r, s, o_, s_ = [], [], [], [], [], []
+    au, avail_u_, u_onehot, terminate, padded = [], [], [], [], []
+    step_rewards = []
 
-        allstation, station_list, air = reset_env(env,thispulse)
-        reset_station(env, allstation, station_list)
-        episode = {}
-        times = []
-        pp = 0
+    allstation, station_list, air = reset_env(env, thispulse)
+    reset_station(env, allstation, station_list)
+    episode = {}
 
-        def production(env, agents, air, allstation, station_list, evaluate, start_epsilon):
-            # o, u, o_, r, s, s_, avail_u, u_onehot, terminate, padded = [], [], [], [], [], [], [], [], [], []
-            episode = {}
-            now_state, done = get_states(env, air, allstation,thispulse)
-            last_action = np.zeros((n_agents, n_actions))
-            agents.policy.init_hidden(1)
-            epsilon = 0 if episode_num>int(conf.n_epochs*0.95) else conf.start_epsilon
-            # epsilon = 0 if evaluate else start_epsilon
-            # print(now_state)
-            pr = []
-            while not done:
-                obs, _ = get_obs(env, air, allstation,thispulse)
-                state, _ = get_states(env, air, allstation,thispulse)
-                actions, avail_actions, actions_onehot = [], [], []
+    def production(env, agents, air, allstation, station_list, evaluate, start_epsilon):
+        now_state, done = get_states(env, air, allstation, thispulse)
+        last_action = np.zeros((n_agents, n_actions))
+        agents.policy.init_hidden(1)
+        epsilon = 0 if episode_num > int(conf.n_epochs * 0.95) else conf.start_epsilon
+        pr = []
+        while not done:
+            obs, _ = get_obs(env, air, allstation, thispulse)
+            state, _ = get_states(env, air, allstation, thispulse)
+            actions, avail_actions, actions_onehot = [], [], []
 
-                # print("当前的obs为", obs)
-                # print("当前的state为", state)
-                for agent_id in range(n_agents):
-                    avail_action = action_set
-                    action = agents.choose_action(state, last_action[agent_id], agent_id, avail_action,
-                                                  epsilon, evaluate)
+            for agent_id in range(n_agents):
+                avail_action = action_set
+                action = agents.choose_action(
+                    state,
+                    last_action[agent_id],
+                    agent_id,
+                    avail_action,
+                    epsilon,
+                    evaluate,
+                )
 
-                    # 生成动作的onehot编码
-                    action_onehot = np.zeros(n_actions)
-                    action_onehot[action] = 1
-                    actions.append(action)
-                    actions_onehot.append(action_onehot)
-                    avail_actions.append(avail_action)
-                    last_action[agent_id] = action_onehot
+                action_onehot = np.zeros(n_actions)
+                action_onehot[action] = 1
+                actions.append(action)
+                actions_onehot.append(action_onehot)
+                avail_actions.append(avail_action)
+                last_action[agent_id] = action_onehot
 
-                now_time = env.now
-                if now_time >= 0 and now_time < thispulse:
-                    station_id = 0
-                elif now_time >= thispulse and now_time < 2 * thispulse:
-                    station_id = 1
-                elif now_time >= 2 * thispulse and now_time < 3 * thispulse:
-                    station_id = 2
-                else:
-                    station_id = 3
-                print('此时的站位为：', station_id)
-                nowstation = allstation[station_id]
-                nowstation.distribution(air, actions)
-                if nowstation.id < 3:
-                    yield env.timeout(thispulse)
-                else:
-                    yield env.timeout(thispulse + 1000)
+            now_time = env.now
+            if now_time >= 0 and now_time < thispulse:
+                station_id = 0
+            elif now_time >= thispulse and now_time < 2 * thispulse:
+                station_id = 1
+            elif now_time >= 2 * thispulse and now_time < 3 * thispulse:
+                station_id = 2
+            else:
+                station_id = 3
+            print('此时的站位为：', station_id)
+            nowstation = allstation[station_id]
+            nowstation.distribution(air, actions)
+            if nowstation.id < 3:
+                yield env.timeout(thispulse)
+            else:
+                yield env.timeout(thispulse + 1000)
 
-                next_state, done = get_states(env, air, allstation,thispulse)
-                next_obs,done = get_states(env,air,allstation,thispulse)
-                reward = get_reward(env.now, allstation, air,thispulse)
-                # print("actions: ", actions)
+            next_state, done = get_states(env, air, allstation, thispulse)
+            reward = get_reward(env.now, allstation, air, thispulse)
+            step_rewards.append(reward)
 
-                o.append([state,state])
-                s.append(state)
-                u.append(np.reshape(actions, [n_agents, 1]))
-                u_onehot.append(actions_onehot)
+            o.append([state, state])
+            s.append(state)
+            u.append(np.reshape(actions, [n_agents, 1]))
+            u_onehot.append(actions_onehot)
+            pr.append(reward)
+            o_.append([next_state, next_state])
+            s_.append(next_state)
+            au.append(avail_actions)
+            terminate.append([done])
+            padded.append([0.0])
 
-                # r.append([reward])
-                pr.append(reward)
-                o_.append([next_state,next_state])
-                s_.append(next_state)
-                au.append(avail_actions)
-                terminate.append([done])
-                padded.append([0.])
+            station_list[station_id + 1].put(air)
 
-                # step += 1
-                # if self.conf.epsilon_anneal_scale == 'step':
-                #     epsilon = epsilon - self.anneal_epsilon if epsilon > self.end_epsilon else epsilon
-                station_list[station_id + 1].put(air)
+            if nowstation.id == station_num - 1:
+                this_pulse, times = get_pulse(allstation)
+                pulses.append(this_pulse)
+                if this_pulse < 660:
+                    SI.append(times)
+                    print("平滑指数是：", times)
+                print(pr)
 
-
-                #工序约束50
-                # if nowstation.id == station_num-1:
-                #     this_pulse,times = get_pulse(allstation)
-                #     pulses.append(this_pulse)
-                #     if this_pulse < 608:
-                #         agents.policy.save_model(20)
-                #         SI.append(times)
-                #         print("平滑指数是：", times)
-                #     # print("当前节拍是：", this_pulse)
-                #     pp = this_pulse
-                #     print(pr)
-                #
-                #
-                #     for i in range(station_num):
-                #         # if (i == 0):
-                #         #     tmp = 0.5 * pr[0] + 0.5 * 100/(this_pulse - 600)
-                #         # elif (i == 1):
-                #         #     tmp = 0.5 * pr[1] + 0.3 * 100/(this_pulse - 600)
-                #         # elif (i == 2):
-                #         #     tmp = 0.6 * pr[2] + 0.4 *100/(this_pulse - 600)
-                #
-                #         ##工序约束_50
-                #         if this_pulse < 620:
-                #             tmp = 1
-                #         elif this_pulse < 650:
-                #             tmp = 0.5
-                #         else:
-                #             tmp = -1
-                #
-                #
-                #
-                #         r.append([tmp])
-                #
-                #     yield env.timeout(thispulse + 2000)
-
-
-
-
-                if nowstation.id == station_num-1:
-                    this_pulse,times = get_pulse(allstation)
-                    pulses.append(this_pulse)
+                for _ in range(station_num):
                     if this_pulse < 660:
-                        # agents.policy.save_model(20)
-                        SI.append(times)
-                        print("平滑指数是：", times)
-                    # print("当前节拍是：", this_pulse)
-                    pp = this_pulse
-                    print(pr)
+                        tmp = 1
+                    elif this_pulse < 680:
+                        tmp = 0.7
+                    elif this_pulse < 700:
+                        tmp = 0.5
+                    else:
+                        tmp = -1
+                    r.append([tmp])
 
+                yield env.timeout(thispulse + 2000)
 
-                    for i in range(station_num):
-                        if this_pulse < 660:
-                            tmp = 1
-                        elif this_pulse < 680:
-                            tmp = 0.7
-                        elif this_pulse < 700:
-                            tmp = 0.5
-                        else:
-                            tmp = -1
-                        r.append([tmp])
+    env.process(production(env, agents, air, allstation, station_list, evaluate, conf.start_epsilon))
+    env.run(5000)
 
-                    yield env.timeout(thispulse + 2000)
-            # 最后一个动作
+    transition_len = len(o)
+    if len(r) < transition_len:
+        for rr in step_rewards[:transition_len - len(r)]:
+            r.append([rr])
+    while len(r) < transition_len:
+        r.append([0.0])
 
-            # target q 在last obs需要avail_action
+    def pad_or_trim(seq, pad_value):
+        if len(seq) > conf.episode_limit:
+            return seq[:conf.episode_limit]
+        while len(seq) < conf.episode_limit:
+            seq.append(pad_value)
+        return seq
 
+    zero_state = np.zeros(conf.state_shape).tolist()
+    zero_obs = [zero_state, zero_state]
+    o = pad_or_trim(o, zero_obs)
+    s = pad_or_trim(s, zero_state)
+    u = pad_or_trim(u, np.zeros((n_agents, 1)).tolist())
+    r = pad_or_trim(r, [0.0])
+    o_ = pad_or_trim(o_, zero_obs)
+    s_ = pad_or_trim(s_, zero_state)
+    u_onehot = pad_or_trim(u_onehot, np.zeros((n_agents, n_actions)).tolist())
+    padded = pad_or_trim(padded, [1.0])
+    terminate = pad_or_trim(terminate, [1.0])
 
-
-            # 当step<self.episode_limit时，输入数据加padding
-            # for i in range(step, episode_limit):
-            #     o.append(np.zeros((n_agents, obs_shape)))
-            #     u.append(np.zeros([n_agents, 1]))
-            #     s.append(np.zeros(state_shape))
-            #     r.append([0.])
-            #     o_.append(np.zeros((n_agents, obs_shape)))
-            #     s_.append(np.zeros(state_shape))
-            #     u_onehot.append(np.zeros((n_agents, n_actions)))
-            #     avail_u.append(np.zeros((n_agents, n_actions)))
-            #     avail_u_.append(np.zeros((n_agents, n_actions)))
-            #     padded.append([1.])
-            #     terminate.append([1.])
-
-
-
-            for key in episode.keys():
-                episode[key] = np.array([episode[key]])
-            if not evaluate:
-                start_epsilon = epsilon
-            return episode
-
-        env.process(production(env, agents, air, allstation, station_list,evaluate,conf.start_epsilon))
-
-
-        env.run(5000)
-
-        episode['o'] = o.copy()
-        episode['s'] = s.copy()
-        episode['u'] = u.copy()
-        episode['r'] = r.copy()
-        episode['o_'] = o_.copy()
-        episode['s_'] = s_.copy()
-        episode['avail_u'] = action_set.copy()
-        episode['avail_u_'] = action_set.copy()
-        episode['u_onehot'] = u_onehot.copy()
-        episode['padded'] = padded.copy()
-        episode['terminated'] = terminate.copy()
-        return episode
+    episode['o'] = o.copy()
+    episode['s'] = s.copy()
+    episode['u'] = u.copy()
+    episode['r'] = r.copy()
+    episode['o_'] = o_.copy()
+    episode['s_'] = s_.copy()
+    episode['avail_u'] = action_set.copy()
+    episode['avail_u_'] = action_set.copy()
+    episode['u_onehot'] = u_onehot.copy()
+    episode['padded'] = padded.copy()
+    episode['terminated'] = terminate.copy()
+    return episode
 
 
 class ReplayBuffer:

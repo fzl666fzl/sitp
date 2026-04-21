@@ -24,7 +24,7 @@ args = args_parser()
 pro_num = args.pro_num
 team_num = args.team_num
 station_num = args.station_num
-init_pulse = 710
+init_pulse = 650
 import rollout_dis
 # action_set = [[1,0,0],[0.8,0.2,0],[0.8,0,0.2],
 #               [0.6,0.2,0.2],[0.5,0.2,0.3],[0.2,0.5,0.3],

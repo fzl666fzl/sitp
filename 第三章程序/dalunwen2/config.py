@@ -24,7 +24,7 @@ class Config:
         self.result_dir = './results/'
 
         # test setting
-        self.load_model = True
+        self.load_model = False
 
         # SC2 env setting
         self.map_name = '3m'

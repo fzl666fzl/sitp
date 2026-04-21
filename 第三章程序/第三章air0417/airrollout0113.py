@@ -6,6 +6,7 @@ import simpy
 import random
 import pandas as pd
 import math
+import os
 
 import numpy as np
 from parameter import args_parser
@@ -706,7 +707,8 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
 
                     data = [oid,sttime, fitime, st_id, banzu_id, worlst]
                     df = pd.DataFrame(list(map(list, zip(*data))), columns=['工序号','工序开始时间', '工序结束时间', "站位号", "班组号", "工人列表"])
-                    df.to_excel('/home/wyl/第三章air0417/output1.xlsx', index=False)
+                    output_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output1.xlsx')
+                    df.to_excel(output_file, index=False)
                     SI.append(times)
                     print("平滑指数是：", times)
                     print("动作是：", actions)

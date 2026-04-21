@@ -1,10 +1,10 @@
-import numpy as np
+﻿import numpy as np
 import torch
 import os
 from NN import DRQN, QMIXNET
 # import wandb
 # import sys
-# sys.setrecursionlimit(100000) #例如这里设置为十万
+# sys.setrecursionlimit(100000) #渚嬪杩欓噷璁剧疆涓哄崄涓?
 
 # wandb.init(project="qmix660")
 class QMIX:
@@ -19,7 +19,7 @@ class QMIX:
 
         # print(self.device, self.n_actions, self.n_agents, self.state_shape, self.obs_shape, input_shape)
 
-        # DRQN 的参数
+        # DRQN 鐨勫弬鏁?
         if self.conf.last_action:
             input_shape += self.n_actions
         if self.conf.reuse_network:
@@ -38,15 +38,28 @@ class QMIX:
         self.model_dir = self.conf.model_dir + self.conf.map_name
 
         if self.conf.load_model:
-            if os.path.exists('/home/wyl/第三章air0417/1_drqn_net_params.pkl'):
-                drqn_path = '/home/wyl/第三章air0417/1_drqn_net_params.pkl'
-                qmix_path = '/home/wyl/第三章air0417/1_qmix_net_params.pkl'
-                map_location = 'cuda:2' if self.conf.cuda else 'cpu'
-                self.eval_drqn_net.load_state_dict(torch.load(drqn_path))
-                self.eval_qmix_net.load_state_dict(torch.load(qmix_path))
-                print("successfully load models")
-            else:
-                raise Exception("No model!")
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            candidate_pairs = [
+                (
+                    os.path.join(base_dir, "1_drqn_net_params.pkl"),
+                    os.path.join(base_dir, "1_qmix_net_params.pkl"),
+                ),
+                (
+                    os.path.join(base_dir, "0_drqn_net_params.pkl"),
+                    os.path.join(base_dir, "0_qmix_net_params.pkl"),
+                ),
+            ]
+            map_location = "cuda:2" if self.conf.cuda else "cpu"
+            loaded = False
+            for drqn_path, qmix_path in candidate_pairs:
+                if os.path.exists(drqn_path) and os.path.exists(qmix_path):
+                    self.eval_drqn_net.load_state_dict(torch.load(drqn_path, map_location=map_location))
+                    self.eval_qmix_net.load_state_dict(torch.load(qmix_path, map_location=map_location))
+                    print("successfully load models:", drqn_path, qmix_path)
+                    loaded = True
+                    break
+            if not loaded:
+                print("model files not found, continue with random initialization.")
 
         # copy eval net params to target net
         self.target_drqn_net.load_state_dict(self.eval_drqn_net.state_dict())
@@ -56,7 +69,7 @@ class QMIX:
         if self.conf.optimizer == "RMS":
             self.optimizer = torch.optim.RMSprop(self.eval_parameters, lr=self.conf.learning_rate)
 
-        # 学习时，为每个agent维护一个eval_hidden, target_hidden
+        # 瀛︿範鏃讹紝涓烘瘡涓猘gent缁存姢涓€涓猠val_hidden, target_hidden
         self.eval_hidden = None
         self.target_hidden = None
 
@@ -79,14 +92,14 @@ class QMIX:
 
         s, s_, u, r, terminated = batch['s'], batch['s_'], batch['u'], batch['r'], batch['terminated']
 
-        mask = 1 - batch['padded'].float()  # 把填充经验的TD-error置0，防止影响学习,padded都是0
+        mask = 1 - batch['padded'].float()  # 鎶婂～鍏呯粡楠岀殑TD-error缃?锛岄槻姝㈠奖鍝嶅涔?padded閮芥槸0
 
 
 
-        # 得到每个agent对应的Q值，维度为(episode个数, max_episode_len， n_agents， n_actions)
+        # 寰楀埌姣忎釜agent瀵瑰簲鐨凲鍊硷紝缁村害涓?episode涓暟, max_episode_len锛?n_agents锛?n_actions)
         q_evals, q_targets = self.get_q_values(batch, max_episode_len)
-        # print("当前的q值是",q_evals)
-        # print("当前的q值是", q_targets)
+        # print("褰撳墠鐨剄鍊兼槸",q_evals)
+        # print("褰撳墠鐨剄鍊兼槸", q_targets)
         s = s.to(self.device)
         u = u.to(self.device)
         r = r.to(self.device)
@@ -94,7 +107,7 @@ class QMIX:
         terminated = terminated.to(self.device)
         mask = mask.to(self.device)
 
-        # 取每个agent动作对应的Q值，并且把最后不需要的一维去掉，因为最后一维只有一个值了
+        # 鍙栨瘡涓猘gent鍔ㄤ綔瀵瑰簲鐨凲鍊硷紝骞朵笖鎶婃渶鍚庝笉闇€瑕佺殑涓€缁村幓鎺夛紝鍥犱负鏈€鍚庝竴缁村彧鏈変竴涓€间簡
         # print("q_evals1 shape: ", q_evals.size()) #[batch_size, max_episode_len, n_agents, n_actions]
         q_evals = torch.gather(q_evals, dim=3, index=u).squeeze(3)
         # q_targets[avail_u_ == 0.0] = -9999999
@@ -102,13 +115,13 @@ class QMIX:
         # print(q_evals.size())###[32,4,2]
         # print(q_targets.size())###[32,4,2]
         # print(torch.max(r,dim=1))###[32,4,1]
-        # print("q_evals2 shape: ", q_evals.size()) # [batch_size, max_episode_len, n_agents]找到了最大的那个
+        # print("q_evals2 shape: ", q_evals.size()) # [batch_size, max_episode_len, n_agents]鎵惧埌浜嗘渶澶х殑閭ｄ釜
         r1 = torch.max(r,dim=1)[0].numpy()
         # a = -min(r1)
         a = r1[3]
         print("r",r1)
         print("a",np.mean(r1))
-        # MSELoss函数的具体使用方法如下所示，其中MSELoss函数的参数均为默认参数。
+        # MSELoss鍑芥暟鐨勫叿浣撲娇鐢ㄦ柟娉曞涓嬫墍绀猴紝鍏朵腑MSELoss鍑芥暟鐨勫弬鏁板潎涓洪粯璁ゅ弬鏁般€?
         losshi = torch.nn.MSELoss(size_average=None, reduce=None, reduction='mean')
         losshi = losshi(q_evals, q_targets)
         # wandb.log({"losshi": losshi})
@@ -132,7 +145,7 @@ class QMIX:
         # wandb.log({"rewards": torch.mean(a)})
 
 
-        print("*******开始训练**********",loss)
+        print("*******寮€濮嬭缁?*********",loss)
         # wandb.log({"loss":loss})
 
 
@@ -149,7 +162,7 @@ class QMIX:
         episode_num = batch['o'].shape[0]
         q_evals, q_targets = [], []
         for transition_idx in range(max_episode_len):
-            inputs, inputs_ = self._get_inputs(batch, transition_idx)  # 给obs加last_action、agent_id
+            inputs, inputs_ = self._get_inputs(batch, transition_idx)  # 缁檕bs鍔爈ast_action銆乤gent_id
 
             inputs = inputs.to(self.device)  # [batch_size*n_agents, obs_shape+n_agents+n_actions]
             inputs_ = inputs_.to(self.device)
@@ -164,15 +177,15 @@ class QMIX:
             q_evals.append(q_eval)
             q_targets.append(q_target)
 
-        # 得的q_eval和q_target是一个列表，列表里装着max_episode_len个数组，数组的的维度是(episode个数, n_agents，n_actions)
-        # 把该列表转化成(batch_size, max_episode_len， n_agents，n_actions)的数组
+        # 寰楃殑q_eval鍜宷_target鏄竴涓垪琛紝鍒楄〃閲岃鐫€max_episode_len涓暟缁勶紝鏁扮粍鐨勭殑缁村害鏄?episode涓暟, n_agents锛宯_actions)
+        # 鎶婅鍒楄〃杞寲鎴?batch_size, max_episode_len锛?n_agents锛宯_actions)鐨勬暟缁?
         q_evals = torch.stack(q_evals, dim=1)
         q_targets = torch.stack(q_targets, dim=1)
         return q_evals, q_targets
 
     def _get_inputs(self, batch, transition_idx):
         o, o_, u_onehot = batch['o'][:, transition_idx], batch['o_'][:, transition_idx], batch[
-            'u_onehot'][:]  # u_onehot取全部，要用上一条
+            'u_onehot'][:]  # u_onehot鍙栧叏閮紝瑕佺敤涓婁竴鏉?
 
         episode_num = o.shape[0]  # episode_num=batch_size=32
 
@@ -180,7 +193,7 @@ class QMIX:
         inputs.append(o)
         inputs_.append(o_)
 
-        # 给obs添加上一个动作、agent编号
+        # 缁檕bs娣诲姞涓婁竴涓姩浣溿€乤gent缂栧彿
         if self.conf.last_action:
             if transition_idx == 0:
                 inputs.append(torch.zeros_like(u_onehot[:, transition_idx]))
@@ -188,21 +201,21 @@ class QMIX:
                 inputs.append(u_onehot[:, transition_idx - 1])
             inputs_.append(u_onehot[:, transition_idx])
 
-        if self.conf.reuse_network:####对所有的智能体用一个网络
+        if self.conf.reuse_network:####瀵规墍鏈夌殑鏅鸿兘浣撶敤涓€涓綉缁?
             """
-            因为当前的obs三维的数据，每一维分别代表(episode编号，agent编号，obs维度)，直接在dim_1上添加对应的向量
-            即可，比如给agent_0后面加(1, 0, 0, 0, 0)，表示5个agent中的0号。而agent_0的数据正好在第0行，那么需要加的
-            agent编号恰好就是一个单位矩阵，即对角线为1，其余为0
+            鍥犱负褰撳墠鐨刼bs涓夌淮鐨勬暟鎹紝姣忎竴缁村垎鍒唬琛?episode缂栧彿锛宎gent缂栧彿锛宱bs缁村害)锛岀洿鎺ュ湪dim_1涓婃坊鍔犲搴旂殑鍚戦噺
+            鍗冲彲锛屾瘮濡傜粰agent_0鍚庨潰鍔?1, 0, 0, 0, 0)锛岃〃绀?涓猘gent涓殑0鍙枫€傝€宎gent_0鐨勬暟鎹濂藉湪绗?琛岋紝閭ｄ箞闇€瑕佸姞鐨?
+            agent缂栧彿鎭板ソ灏辨槸涓€涓崟浣嶇煩闃碉紝鍗冲瑙掔嚎涓?锛屽叾浣欎负0
             """
             inputs.append(torch.eye(self.n_agents).unsqueeze(0).expand(episode_num, -1, -1))
             inputs_.append(torch.eye(self.n_agents).unsqueeze(0).expand(episode_num, -1, -1))
 
-        # 把batch_size、n_agents个agent的obs拼起来，
-        # 因为这里所有agent共享一个神经网络，每条数据中带上了自己的编号，所以还是自己的数据
+        # 鎶奲atch_size銆乶_agents涓猘gent鐨刼bs鎷艰捣鏉ワ紝
+        # 鍥犱负杩欓噷鎵€鏈塧gent鍏变韩涓€涓缁忕綉缁滐紝姣忔潯鏁版嵁涓甫涓婁簡鑷繁鐨勭紪鍙凤紝鎵€浠ヨ繕鏄嚜宸辩殑鏁版嵁
         # (batch_size, n_agents, n_actions) -> (batch_size*n_agents, n_actions)
         inputs = torch.cat([x.reshape(episode_num * self.n_agents, -1) for x in inputs], dim=1)
         inputs_ = torch.cat([x.reshape(episode_num * self.n_agents, -1) for x in inputs_], dim=1)
-        # print("处理后的inputs为",inputs)
+        # print("澶勭悊鍚庣殑inputs涓?,inputs)
         return inputs, inputs_
 
     def init_hidden(self, episode_num):

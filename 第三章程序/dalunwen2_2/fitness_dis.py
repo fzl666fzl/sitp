@@ -792,6 +792,13 @@ def generate_episode(gene,thispulse,fits):
 
 
         env.run(5000)
+        if len(fits) < 3:
+            this_pulse, sii = get_pulse(allstation)
+            fitt = 0.5 * sii / 10000 + this_pulse / 100
+            fits.clear()
+            fits.append(fitt)
+            fits.append(this_pulse)
+            fits.append(math.sqrt(sii))
         return
 
 

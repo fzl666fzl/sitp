@@ -1,5 +1,6 @@
-# parameters
+﻿# parameters
 import argparse
+import os
 import pandas as pd
 
 def args_parser():
@@ -11,12 +12,12 @@ def args_parser():
     # pulse = 1000
     # pro_none = [-1] * pro_num
     #
-    # all_pro = pd.read_excel('紧前关系整理版.xlsx')  ####所有的工序序号及约束,pro代表procedure工序
-    # pro_preorder = all_pro['紧前工序号'].values.tolist()
-    # pro_id = all_pro['工序号'].values.tolist()
-    # pro_time = all_pro['作业时间'].values.tolist()
-    # pro_workernum = all_pro['需求人数'].values.tolist()
-    # pro_team = all_pro['专业组别'].values.tolist()
+    # all_pro = pd.read_excel('绱у墠鍏崇郴鏁寸悊鐗?xlsx')  ####鎵€鏈夌殑宸ュ簭搴忓彿鍙婄害鏉?pro浠ｈ〃procedure宸ュ簭
+    # pro_preorder = all_pro['绱у墠宸ュ簭鍙?].values.tolist()
+    # pro_id = all_pro['宸ュ簭鍙?].values.tolist()
+    # pro_time = all_pro['浣滀笟鏃堕棿'].values.tolist()
+    # pro_workernum = all_pro['闇€姹備汉鏁?].values.tolist()
+    # pro_team = all_pro['涓撲笟缁勫埆'].values.tolist()
     # pro_init = []
     #
 
@@ -29,10 +30,11 @@ def args_parser():
     pro_none = [-1] * pro_num
     freeorders = [1,2,3,4]
 
-    # all_pro = pd.read_excel('/home/wyl/dalunwen2/工序约束_50.xlsx')  ####所有的工序序号及约束,pro代表procedure工序
-    all_pro = pd.read_excel('工序约束_50.xlsx')  ####所有的工序序号及约束,pro代表procedure工序
-    # all_pro = pd.read_excel('工序约束_50_2.xlsx')  ####所有的工序序号及约束,pro代表procedure工序
-    # all_pro = pd.read_excel('工序约束_50_10.xlsx')  ####所有的工序序号及约束,pro代表procedure工序
+    # all_pro = pd.read_excel('/home/wyl/dalunwen2/宸ュ簭绾︽潫_50.xlsx')  ####鎵€鏈夌殑宸ュ簭搴忓彿鍙婄害鏉?pro浠ｈ〃procedure宸ュ簭
+    data_file = os.path.join(os.path.dirname(__file__), '工序约束_50_11.xlsx')
+    all_pro = pd.read_excel(data_file)  ####鎵€鏈夌殑宸ュ簭搴忓彿鍙婄害鏉?pro浠ｈ〃procedure宸ュ簭
+    # all_pro = pd.read_excel('宸ュ簭绾︽潫_50_2.xlsx')  ####鎵€鏈夌殑宸ュ簭搴忓彿鍙婄害鏉?pro浠ｈ〃procedure宸ュ簭
+    # all_pro = pd.read_excel('宸ュ簭绾︽潫_50_10.xlsx')  ####鎵€鏈夌殑宸ュ簭搴忓彿鍙婄害鏉?pro浠ｈ〃procedure宸ュ簭
     pro_preorder = all_pro['紧前工序'].values.tolist()
     pro_postorder = all_pro['紧后工序'].values.tolist()
     pro_id = all_pro['工序'].values.tolist()
@@ -43,7 +45,7 @@ def args_parser():
 
 
 
-    ####为整理紧前关系字典做准备
+    ####涓烘暣鐞嗙揣鍓嶅叧绯诲瓧鍏稿仛鍑嗗
     single_isfirstpro = [0 for _ in range(pro_num)]
     single_pro_team = [0 for _ in range(pro_num)]
     for i in range(pro_num):
@@ -147,34 +149,34 @@ def args_parser():
     # print(min(dict_posttime.values()))
 
     parser.add_argument('--pro_num', type=int, default=pro_num,
-                        help="总的工序数")
+                        help="total procedure count")
     parser.add_argument('--team_num', type=int, default=team_num,
-                        help="总的班组数")
+                        help="total team count")
     parser.add_argument('--station_num', type=int, default=station_num,
-                        help="总的站位数")  # 固定时间间隔投料
+                        help="total station count")  # fixed-interval feeding
     parser.add_argument('--pulse', type=int, default=pulse,
-                        help="总的站位数")  # 固定时间间隔投料
+                        help="station pulse")  # fixed-interval feeding
     parser.add_argument('--pro_id', type=list, default=pro_id,
-                        help="是否没有紧前工序")  # 调度时间
+                        help="鏄惁娌℃湁绱у墠宸ュ簭")  # 璋冨害鏃堕棿
     parser.add_argument('--dict_isfirstprocedure', type=int, default=dict_isfirstprocedure,
-                        help="是否没有紧前工序")  # 调度时间
+                        help="鏄惁娌℃湁绱у墠宸ュ簭")  # 璋冨害鏃堕棿
     parser.add_argument('--dict_time', type=int, default=dict_time,
-                        help="The time to charge the rules: performance_point")  # 调度时间
+                        help="The time to charge the rules: performance_point")  # 璋冨害鏃堕棿
     parser.add_argument('--dict_preorder', type=int, default=dict_preorder,
-                        help="The time to charge the rules: performance_point")  # 调度时间
+                        help="The time to charge the rules: performance_point")  # 璋冨害鏃堕棿
     parser.add_argument('--dict_team', type=int, default=dict_team,
-                        help="The time to charge the rules: performance_point")  # 调度时间
+                        help="The time to charge the rules: performance_point")  # 璋冨害鏃堕棿
     # parser.add_argument('--dict_workernum', type=int, default=dict_workernum,
-    #                     help="The time to charge the rules: performance_point")  # 调度时间
+    #                     help="The time to charge the rules: performance_point")  # 璋冨害鏃堕棿
     parser.add_argument('--dict_postorder', type=int, default=dict_postorder,
-                        help="The time to charge the rules: performance_point")  # 调度时间
+                        help="The time to charge the rules: performance_point")  # 璋冨害鏃堕棿
 
     parser.add_argument('--pro_init', type=int, default=pro_init,
-                        help="初始的可行解集合")  # 调度时间
+                        help="鍒濆鐨勫彲琛岃В闆嗗悎")  # 璋冨害鏃堕棿
     parser.add_argument('--dict_postnum', type=int, default=dict_postnum,
-                        help="初始的可行解集合")  # 调度时间
+                        help="鍒濆鐨勫彲琛岃В闆嗗悎")  # 璋冨害鏃堕棿
     parser.add_argument('--dict_posttime', type=int, default=dict_posttime,
-                        help="初始的可行解集合")  # 调度时间
+                        help="鍒濆鐨勫彲琛岃В闆嗗悎")  # 璋冨害鏃堕棿
     parser.add_argument('--dict_postsinktime',type = int,default=dict_postsinktime)
     parser.add_argument('--pro_iscrtl', type=int, default=pro_iscrtl)
     parser.add_argument('--freeorders', type=int, default=freeorders)
@@ -189,3 +191,8 @@ def args_parser():
     return args
 
 args_parser()
+
+
+
+
+

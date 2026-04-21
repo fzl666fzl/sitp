@@ -1,5 +1,6 @@
 # parameters
 import argparse
+import os
 import pandas as pd
 
 def args_parser():
@@ -30,7 +31,8 @@ def args_parser():
     freeorders = [1,2,3,4]
 
     # all_pro = pd.read_excel('/home/wyl/dalunwen2/工序约束_50.xlsx')  ####所有的工序序号及约束,pro代表procedure工序
-    all_pro = pd.read_excel('工序约束_50.xlsx')  ####所有的工序序号及约束,pro代表procedure工序
+    data_file = os.path.join(os.path.dirname(__file__), '工序约束_50.xlsx')
+    all_pro = pd.read_excel(data_file)  ####所有的工序序号及约束,pro代表procedure工序
     # all_pro = pd.read_excel('工序约束_50_2.xlsx')  ####所有的工序序号及约束,pro代表procedure工序
     # all_pro = pd.read_excel('工序约束_50_10.xlsx')  ####所有的工序序号及约束,pro代表procedure工序
     pro_preorder = all_pro['紧前工序'].values.tolist()

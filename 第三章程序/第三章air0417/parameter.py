@@ -4,6 +4,7 @@
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 import pandas as pd
 import argparse
+import os
 
 
 
@@ -11,8 +12,30 @@ import argparse
 # Press the green button in the gutter to run the script.
 def args_parser():
     parser = argparse.ArgumentParser()
-    # dir = "D:/飞机工艺/Data/"
-    dir = "/home/wyl/airassemble/Data/"
+    script_dir = os.path.dirname(__file__)
+    env_data_dir = os.environ.get('AIR0417_DATA_DIR', '').strip()
+    # Keep historical paths as fallbacks, but prefer local/workspace paths first.
+    data_dirs = [
+        env_data_dir,
+        script_dir,
+        os.path.normpath(os.path.join(script_dir, '..', '..', '第三章', '源数据', '数据集数据')),
+        os.path.normpath(os.path.join(script_dir, '..', '..', '实验', '3', '源数据', '飞机工艺', 'Data')),
+        os.path.normpath(os.path.join(script_dir, '..', '..', '..', '..', '实验', '3', '源数据', '飞机工艺', 'Data')),
+        os.path.normpath(os.path.join(os.path.expanduser('~'), 'Desktop', 'sitp', '实验', '3', '源数据', '飞机工艺', 'Data')),
+        r"D:/飞机工艺/Data",
+        r"/home/wyl/airassemble/Data",
+    ]
+    data_dirs = [d for d in data_dirs if d]
+
+    def resolve_data_path(filename):
+        for base in data_dirs:
+            candidate = os.path.join(base, filename)
+            if os.path.exists(candidate):
+                return candidate
+        searched = [os.path.join(base, filename) for base in data_dirs]
+        raise FileNotFoundError(
+            f"未找到数据文件: {filename}，已搜索路径: {searched}"
+        )
     pro_num = 3182
     pack_num = 12
     team_num = 17
@@ -49,7 +72,7 @@ def args_parser():
                 len(pro_g), len(pro_h), len(pro_i), len(pro_j), len(pro_k), len(pro_l)]
 
     # all_data = pd.read_excel("D:/飞机工艺/Data/3182工序总表2.xlsx")
-    all_data = pd.read_excel("/home/wyl/airassemble/Data/3182工序总表2.xlsx")
+    all_data = pd.read_excel(resolve_data_path("3182工序总表2.xlsx"))
     pro_workernum = all_data['需求人数'].values.tolist()
     pro_time = all_data['加工时间/h'].values.tolist()
     pro_prf = all_data['专业'].values.tolist()###15个专业
@@ -61,7 +84,7 @@ def args_parser():
     dict_team = dict(zip(pro_id,pro_prf))
 
     for i in range(len(paths)):
-        path = dir + paths[i] + "整合.xlsx"
+        path = resolve_data_path(paths[i] + "整合.xlsx")
         # print(paths[i])
         data = pd.read_excel(path)
         data['紧前工序号'].fillna(0, inplace=True)
@@ -146,7 +169,7 @@ def args_parser():
         dict_postnum[i] = find(i)
         dict_posttime[i] = finddeptime(i)##所有后续工序的和
         dict_postsinktime[i] = findsinktime(i)##到sink之前的所有后续工序的和
-    disvalue = pd.read_excel("/home/wyl/第三章air0417/扰动工序固定.xlsx")
+    disvalue = pd.read_excel(resolve_data_path("扰动工序固定.xlsx"))
     dis_o = disvalue['工序'].values
     dis_tw = [0.05] * len(dis_o)
     dict_dis = dict(zip(dis_o, dis_tw))

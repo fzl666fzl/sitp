@@ -13,3 +13,8 @@ env/
 # 如果你做 GNN 或 AGV 调度有大型数据或日志
 *.log
 data/
+
+.deps/
+.venv/
+__pycache__/
+*.pyc

@@ -38,15 +38,28 @@ class QMIX:
         self.model_dir = self.conf.model_dir + self.conf.map_name
 
         if self.conf.load_model:
-            if os.path.exists(self.model_dir + '/1_drqn_net_params.pkl'):
-                drqn_path = self.model_dir + '/1_drqn_net_params.pkl'
-                qmix_path = self.model_dir + '/1_qmix_net_params.pkl'
-                map_location = 'cuda:2' if self.conf.cuda else 'cpu'
-                self.eval_drqn_net.load_state_dict(torch.load(drqn_path, map_location=map_location))
-                self.eval_qmix_net.load_state_dict(torch.load(qmix_path, map_location=map_location))
-                print("successfully load models")
-            else:
-                raise Exception("No model!")
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            candidate_pairs = [
+                (
+                    os.path.join(base_dir, "models", "3m", "0_drqn_net_params.pkl"),
+                    os.path.join(base_dir, "models", "3m", "0_qmix_net_params.pkl"),
+                ),
+                (
+                    os.path.join(base_dir, "models", "3m", "1_drqn_net_params.pkl"),
+                    os.path.join(base_dir, "models", "3m", "1_qmix_net_params.pkl"),
+                ),
+            ]
+            map_location = "cuda:2" if self.conf.cuda else "cpu"
+            loaded = False
+            for drqn_path, qmix_path in candidate_pairs:
+                if os.path.exists(drqn_path) and os.path.exists(qmix_path):
+                    self.eval_drqn_net.load_state_dict(torch.load(drqn_path, map_location=map_location))
+                    self.eval_qmix_net.load_state_dict(torch.load(qmix_path, map_location=map_location))
+                    print("successfully load models:", drqn_path, qmix_path)
+                    loaded = True
+                    break
+            if not loaded:
+                print("model files not found, continue with random initialization.")
 
         # copy eval net params to target net
         self.target_drqn_net.load_state_dict(self.eval_drqn_net.state_dict())

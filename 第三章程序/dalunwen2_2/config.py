@@ -5,7 +5,7 @@ class Config:
     def __init__(self):
         self.train = True
         self.seed = 133
-        self.cuda = True
+        self.cuda = False## 这里我没有gpu，所以cuda设置为False，如果有gpu可以设置为True，并且在下面的device中选择对应的gpu编号
 
         # train setting
         self.last_action = True  # 使用最新动作选择动作
