@@ -6,6 +6,7 @@ import simpy
 import random
 import pandas as pd
 import math
+import os
 
 import numpy as np
 from parameter import args_parser
@@ -761,7 +762,8 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
 
     data =[sttime,fitime,st_id,banzu_id,worlst]
     df = pd.DataFrame(list(map(list, zip(*data))), columns=['工序开始时间', '工序结束时间',"站位号","班组号","工人列表"])
-    df.to_excel('/home/wyl/第三章air0417/output.xlsx', index=False)
+    output_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output.xlsx')
+    df.to_excel(output_file, index=False)
 
     episode['o'] = o.copy()
     episode['s'] = s.copy()

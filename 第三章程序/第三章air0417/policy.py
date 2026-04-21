@@ -49,7 +49,8 @@ class QMIX:
                     os.path.join(base_dir, "0_qmix_net_params.pkl"),
                 ),
             ]
-            map_location = "cuda:2" if self.conf.cuda else "cpu"
+            use_cuda = self.conf.cuda and torch.cuda.is_available()
+            map_location = "cuda:2" if use_cuda else "cpu"
             loaded = False
             for drqn_path, qmix_path in candidate_pairs:
                 if os.path.exists(drqn_path) and os.path.exists(qmix_path):
@@ -145,7 +146,7 @@ class QMIX:
         # wandb.log({"rewards": torch.mean(a)})
 
 
-        print("*******寮€濮嬭缁?*********",loss)
+        print("*******开始训练*********", loss)
         # wandb.log({"loss":loss})
 
 
