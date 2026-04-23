@@ -27,6 +27,9 @@ station_num = args.station_num
 action_set = [[1,0,0],[0.8,0.2,0],[0.8,0,0.2],
               [0.6,0.2,0.2],[0.5,0.2,0.3],[0.2,0.5,0.3],
               [0.2,0,0.8],[0.2,0.3,0.5],[0.2,0.8,0]]
+team_action_set = [[1.0, 0.0], [0.9, 0.1], [0.8, 0.2],
+                   [0.7, 0.3], [0.6, 0.4], [0.5, 0.5],
+                   [0.4, 0.6], [0.3, 0.7], [0.2, 0.8]]
 # action_set = []
 # for i in np.arange(0.1,1,0.1):
 #     for j in np.arange(0.1,1,0.1):
@@ -56,6 +59,16 @@ dict_postnum = args.dict_postnum
 dict_posttime = args.dict_posttime
 dict_postsinktime = args.dict_postsinktime
 dict_isctrl = args.pro_iscrtl
+
+
+def get_action_idx(actions, position, action_count):
+    if isinstance(actions, np.ndarray):
+        actions = actions.tolist()
+    if isinstance(actions, (list, tuple)) and len(actions) > position:
+        idx = int(actions[position])
+    else:
+        idx = 0
+    return idx % action_count
 '''1.3定义三个类
 class Team：小组类
 class Singelstation：站位类，定义了每个站位的实际工作时间（此数据统计暂时未调通）
@@ -231,12 +244,16 @@ class Station:
         print("当前规则为", action)
 
 
+        proc_action_idx = get_action_idx(action, 0, len(action_set))
+        team_action_idx = get_action_idx(action, 1, len(team_action_set))
+        team_policy = team_action_set[team_action_idx]
+
         while order_free and team_free:
 
             # print(order_free)
-            thisorder = self.cal_pri(order_free, action[0])
+            thisorder = self.cal_pri(order_free, proc_action_idx)
 
-            t = self.team_sel(team_free)
+            t = self.team_sel1(team_free, team_policy)
 
             time_w = (t - 1) / 10 + 1
 
@@ -296,7 +313,7 @@ class Station:
                         air.orders_free = list(order_free.copy())
                         self.orderfreeair = list(order_free.copy())
                         break
-                    t = self.team_sel(team_free)  ###选择的工人序号tbuduiaaaa
+                    t = self.team_sel1(team_free, team_policy)  ###选择的工人序号tbuduiaaaa
                     order_stfi[thisorder][1] = order_stfi[thisorder][1] - dict_time[thisorder] * time_w - tmptime
 
 

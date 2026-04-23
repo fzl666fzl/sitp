@@ -20,7 +20,11 @@ class Agents:
     def choose_action(self, obs, last_action, agent_num, availible_actions, epsilon, evaluate=False):
         inputs = obs[:]
         # print(availible_actions)
-        availible_actions_idx = np.nonzero(availible_actions)[0]
+        availible_actions = np.asarray(availible_actions)
+        if availible_actions.ndim == 1:
+            availible_actions_idx = np.nonzero(availible_actions)[0]
+        else:
+            availible_actions_idx = np.arange(self.n_actions)
         agents_id = np.zeros(self.n_agents)
         agents_id[agent_num] = 1.
 
@@ -31,17 +35,18 @@ class Agents:
         hidden_state = self.policy.eval_hidden[:, agent_num, :]
 
         inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0).to(self.device) # (42,) -> (1,42)
-        availible_actions = torch.tensor(availible_actions, dtype=torch.float32).unsqueeze(0).to(self.device)
 
         # get q value
         q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_drqn_net(inputs, hidden_state)
         # choose action form q value
 
-        # q_value[availible_actions == 0.0] = -float("inf")
+        if availible_actions.ndim == 1:
+            invalid_mask = torch.tensor(availible_actions == 0.0, dtype=torch.bool, device=self.device).unsqueeze(0)
+            q_value = q_value.masked_fill(invalid_mask, -float("inf"))
         if np.random.uniform() < epsilon:
-            action = np.random.choice(availible_actions_idx)
+            action = int(np.random.choice(availible_actions_idx))
         else:
-            action = torch.argmax(q_value)
+            action = int(torch.argmax(q_value).item())
         return action
 
     def _get_max_episode_len(self, batch):
