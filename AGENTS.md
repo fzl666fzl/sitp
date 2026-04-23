@@ -55,35 +55,3 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
 
-
-## 如何协助我处理本仓库
-先说明思路，再进行修改。
-除非我明确要求，否则不要修改代码。
-把这份代码当作不熟悉的学生毕业设计项目来对待。
-讲解代码时，使用简单中文。
-先讲整体架构和模块职责，再讲具体实现细节。
-针对我询问的每个文件，说明以下内容：
-文件用途
-核心类 / 函数
-输入与输出
-调用方与被调用方（谁调用它，它调用谁）
-接下来最值得优先阅读的最少文件
-如果代码含义不明确，直接说明不确定之处，不要随意猜测。
-优先简洁易懂，避免抽象专业术语。
-
-
-回答时优先按以下结构输出：
-1. 文件/目录作用
-2. 核心类和函数
-3. 输入与输出
-4. 调用关系
-5. 执行流程
-6. 下一步最值得阅读的文件
-7. 不确定或可能有歧义的地方
-
-
-当我请求解释项目时：
-先给整体架构图式说明，
-再给模块职责划分，
-再追踪主流程，
-最后再展开具体函数和细节。
