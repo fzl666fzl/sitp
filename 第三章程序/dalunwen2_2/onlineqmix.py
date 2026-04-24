@@ -17,6 +17,7 @@ import simpy
 
 from config import Config
 conf = Config()
+print("online inference mixer:", conf.mixer, "load_model:", conf.load_model)
 
 
 args = args_parser()

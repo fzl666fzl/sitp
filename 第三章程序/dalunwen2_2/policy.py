@@ -1,4 +1,5 @@
 import os
+import re
 import torch
 from NN import DRQN, QMIXNET, QattenMixer
 
@@ -46,8 +47,8 @@ class QMIX:
     def _model_roots(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         roots = [
-            os.path.abspath(os.path.join(self.conf.model_dir, self.conf.map_name)),
             os.path.abspath(os.path.join(base_dir, "models", self.conf.map_name)),
+            os.path.abspath(os.path.join(self.conf.model_dir, self.conf.map_name)),
         ]
         deduped = []
         for root in roots:
@@ -57,33 +58,45 @@ class QMIX:
 
     def _candidate_model_pairs(self):
         candidates = []
-        prefixes = ["0", "1", "2", "3", "02", "03"]
-        for model_root in self._model_roots():
-            for prefix in prefixes:
-                candidates.append(
-                    (
-                        os.path.join(model_root, f"{prefix}_drqn_net_params.pkl"),
-                        os.path.join(model_root, f"{prefix}_{self.mixer}_mixer_params.pkl"),
-                    )
-                )
+        drqn_pattern = re.compile(r"^(\d+)_drqn_net_params\.pkl$")
+        mixer_pattern = re.compile(rf"^(\d+)_{self.mixer}_mixer_params\.pkl$")
+        legacy_qmix_pattern = re.compile(r"^(\d+)_qmix_net_params\.pkl$")
 
-            if self.mixer == "qmix":
-                candidates.extend(
-                    [
-                        (
-                            os.path.join(model_root, "0_drqn_net_params.pkl"),
-                            os.path.join(model_root, "0_qmix_net_params.pkl"),
-                        ),
-                        (
-                            os.path.join(model_root, "02_drqn_net_params.pkl"),
-                            os.path.join(model_root, "02_qmix_net_params.pkl"),
-                        ),
-                        (
-                            os.path.join(model_root, "03_drqn_net_params.pkl"),
-                            os.path.join(model_root, "03_qmix_net_params.pkl"),
-                        ),
-                    ]
-                )
+        for model_root in self._model_roots():
+            if not os.path.isdir(model_root):
+                continue
+
+            latest_drqn = os.path.join(model_root, "latest_drqn_net_params.pkl")
+            latest_mixer = os.path.join(model_root, f"latest_{self.mixer}_mixer_params.pkl")
+            if os.path.exists(latest_drqn) and os.path.exists(latest_mixer):
+                candidates.append((latest_drqn, latest_mixer))
+
+            drqn_files = {}
+            mixer_files = {}
+            for filename in os.listdir(model_root):
+                drqn_match = drqn_pattern.match(filename)
+                if drqn_match:
+                    drqn_files[drqn_match.group(1)] = os.path.join(model_root, filename)
+                    continue
+
+                mixer_match = mixer_pattern.match(filename)
+                if mixer_match:
+                    mixer_files[mixer_match.group(1)] = os.path.join(model_root, filename)
+                    continue
+
+                if self.mixer == "qmix":
+                    legacy_match = legacy_qmix_pattern.match(filename)
+                    if legacy_match:
+                        mixer_files[legacy_match.group(1)] = os.path.join(model_root, filename)
+
+            common_prefixes = sorted(
+                set(drqn_files.keys()) & set(mixer_files.keys()),
+                key=lambda item: int(item),
+                reverse=True,
+            )
+            for prefix in common_prefixes:
+                candidates.append((drqn_files[prefix], mixer_files[prefix]))
+
         return candidates
 
     def _load_model_if_available(self):
@@ -200,5 +213,9 @@ class QMIX:
         print("save model: {} epoch.".format(num))
         drqn_path = os.path.join(self.model_dir, f"{num}_drqn_net_params.pkl")
         mixer_path = os.path.join(self.model_dir, f"{num}_{self.mixer}_mixer_params.pkl")
+        latest_drqn_path = os.path.join(self.model_dir, "latest_drqn_net_params.pkl")
+        latest_mixer_path = os.path.join(self.model_dir, f"latest_{self.mixer}_mixer_params.pkl")
         torch.save(self.eval_drqn_net.state_dict(), drqn_path)
         torch.save(self.eval_mixer_net.state_dict(), mixer_path)
+        torch.save(self.eval_drqn_net.state_dict(), latest_drqn_path)
+        torch.save(self.eval_mixer_net.state_dict(), latest_mixer_path)
