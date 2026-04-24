@@ -5,6 +5,7 @@ import time
 import threading
 import math
 import random
+import builtins
 
 
 
@@ -16,6 +17,13 @@ import random
 import numpy as np
 from parameter import args_parser
 import simpy
+
+_MODULE_VERBOSE = False
+
+
+def print(*args, **kwargs):
+    if _MODULE_VERBOSE:
+        builtins.print(*args, **kwargs)
 
 
 args = args_parser()
@@ -644,6 +652,16 @@ def get_pulse(allstation):
     return pulse_real,si
 
 
+def get_station_times(allstation):
+    station_times = []
+    for i in range(station_num):
+        time_tmp_station = 0
+        for j in range(team_num):
+            time_tmp_station = max(time_tmp_station, allstation[i].teams[j].finishtime)
+        station_times.append(round(float(time_tmp_station), 3))
+    return station_times
+
+
 n_agents = 2
 
 n_actions = 9
@@ -671,6 +689,8 @@ class RolloutWorker:
 
 
 def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=False):
+        global _MODULE_VERBOSE
+        _MODULE_VERBOSE = getattr(conf, "verbose", False)
         env = simpy.Environment()
         o, u, r, s, o_,s_ = [], [], [], [], [], []
         au, avail_u_, u_onehot, terminate, padded = [], [], [], [], []
@@ -680,6 +700,8 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
         episode = {}
         times = []
         pp = 0
+        decision_trace = []
+        result_holder = {"pulse": None, "times": None}
 
         def production(env, agents, air, allstation, station_list, evaluate, start_epsilon):
             # o, u, o_, r, s, s_, avail_u, u_onehot, terminate, padded = [], [], [], [], [], [], [], [], [], []
@@ -687,7 +709,9 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
             now_state, done = get_states(env, air, allstation,thispulse)
             last_action = np.zeros((n_agents, n_actions))
             agents.policy.init_hidden(1)
-            epsilon = 0 if episode_num>int(conf.n_epochs*0.95) else conf.start_epsilon
+            epsilon = 0 if evaluate else (
+                0 if episode_num > int(conf.n_epochs * 0.95) else conf.start_epsilon
+            )
             # epsilon = 0 if evaluate else start_epsilon
             # print(now_state)
             pr = []
@@ -721,6 +745,11 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 else:
                     station_id = 3
                 print('此时的站位为：', station_id)
+                decision_trace.append({
+                    "station_id": int(station_id),
+                    "proc_rule": int(actions[0]) if len(actions) > 0 else 0,
+                    "team_rule": int(actions[1]) if len(actions) > 1 else 0,
+                })
                 nowstation = allstation[station_id]
                 nowstation.distribution(air, actions)
                 if nowstation.id < 3:
@@ -753,6 +782,8 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
 
                 if nowstation.id == station_num-1:
                     this_pulse,times = get_pulse(allstation)
+                    result_holder["pulse"] = this_pulse
+                    result_holder["times"] = times
                     pulses.append(this_pulse)
                     if this_pulse < 620:
                         # agents.policy.save_model(10)
@@ -826,7 +857,17 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
         episode['u_onehot'] = u_onehot.copy()
         episode['padded'] = padded.copy()
         episode['terminated'] = terminate.copy()
-        return episode,times,pp
+        final_pulse = result_holder["pulse"]
+        smoothness_raw = result_holder["times"]
+        summary = {
+            "final_pulse": round(float(final_pulse), 3) if final_pulse is not None else None,
+            "smoothness_index": round(float(math.sqrt(smoothness_raw)), 6)
+            if isinstance(smoothness_raw, (int, float, np.floating))
+            else None,
+            "station_times": get_station_times(allstation),
+            "station_actions": decision_trace,
+        }
+        return episode,times,pp,summary
 
 
 class ReplayBuffer:

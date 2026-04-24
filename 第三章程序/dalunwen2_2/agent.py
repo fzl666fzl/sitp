@@ -15,7 +15,8 @@ class Agents:
 
         self.policy = QMIX(conf)
 
-        print("Agents inited!")
+        if getattr(self.conf, "verbose", False):
+            print("Agents inited!")
 
     def choose_action(self, obs, last_action, agent_num, availible_actions, epsilon, evaluate=False):
         inputs = obs[:]
@@ -43,7 +44,7 @@ class Agents:
         if availible_actions.ndim == 1:
             invalid_mask = torch.tensor(availible_actions == 0.0, dtype=torch.bool, device=self.device).unsqueeze(0)
             q_value = q_value.masked_fill(invalid_mask, -float("inf"))
-        if np.random.uniform() < epsilon:
+        if (not evaluate) and np.random.uniform() < epsilon:
             action = int(np.random.choice(availible_actions_idx))
         else:
             action = int(torch.argmax(q_value).item())

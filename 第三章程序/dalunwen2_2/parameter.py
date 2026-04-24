@@ -88,8 +88,6 @@ def args_parser():
     #                 dict_postorder[pre] = [idd]
     #             else:
     #                 dict_postorder[pre].append(idd)
-    print(dict_preorder)
-    print(dict_postorder)
 
     dict_postnum = {}
     dict_posttime = {}
@@ -180,7 +178,6 @@ def args_parser():
     parser.add_argument('--dict_postsinktime',type = int,default=dict_postsinktime)
     parser.add_argument('--pro_iscrtl', type=int, default=pro_iscrtl)
     parser.add_argument('--freeorders', type=int, default=freeorders)
-    print(pro_iscrtl)
     args = parser.parse_args()
 
 
@@ -190,7 +187,6 @@ def args_parser():
     return args
 
 
-args_parser()
 
 
 

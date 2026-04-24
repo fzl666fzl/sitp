@@ -73,6 +73,72 @@ python onlineqmix.py
 ```
 
 
+## QMIX baseline 使用说明
+
+为了和当前 `Qatten` 做公平对比，项目中已经补了一套“当前环境下的 QMIX baseline”入口。
+
+这套 baseline 的特点是：
+
+1. 保留当前环境不变
+- 保留当前双 agent 决策逻辑
+- 保留当前状态、动作空间和扰动设置
+- 不回退到很早之前的旧 QMIX 代码
+
+2. 只切换 mixer
+- baseline 使用 `qmix`
+- 改进方法使用 `qatten`
+- 这样最后对比更公平
+
+3. 模型目录单独保存
+- QMIX baseline 模型保存在：
+  - `models_qmix_baseline/3m`
+- 不会和当前 `Qatten` 的模型混在一起
+
+### 1. QMIX baseline 训练
+
+```powershell
+python QMIX_baseline_dis1.py
+```
+
+说明：
+- 该入口使用 `config_qmix_baseline.py`
+- 当前 `mixer = "qmix"`
+- 默认训练时 `load_model = False`
+
+### 2. QMIX baseline 在线应用 / 推理
+
+```powershell
+python QMIX_baseline_online.py
+```
+
+说明：
+- 该入口会加载 `models_qmix_baseline/3m` 下的 baseline 模型
+- 在线推理逻辑和 `QATTEN_online.py` 对应一致
+
+### 3. 推荐对比方式
+
+建议按下面两组方式做正式对比：
+
+1. QMIX baseline
+- 训练：`QMIX_baseline_dis1.py`
+- 在线：`QMIX_baseline_online.py`
+
+2. Qatten
+- 训练：`QATTEN_dis1.py`
+- 在线：`QATTEN_online.py`
+
+建议保持以下条件一致：
+- 同一个数据集
+- 同一个扰动设置
+- 同一个初始节拍
+- 同样的训练轮数
+- 同样的环境逻辑
+
+这样论文里才能说明：
+- 性能差异主要来自 `Qatten` 的注意力混合机制
+- 而不是来自环境或脚本结构变化
+
+
 ## 当前配置说明
 
 当前 `config.py` 中已经设置：

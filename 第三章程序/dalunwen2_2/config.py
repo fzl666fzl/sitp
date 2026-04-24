@@ -1,3 +1,4 @@
+import os
 import torch
 
 
@@ -22,9 +23,11 @@ class Config:
         self.grad_norm_clip = 10  # prevent gradient explosion
         self.update_target_params = 100  # 200
         self.result_dir = './results/'
+        self.verbose = False
 
         # test setting
         self.load_model = True
+        self.model_tag = "6"
 
         # SC2 env setting
         self.map_name = '3m'
@@ -51,7 +54,7 @@ class Config:
         self.hyper_hidden_dim = 64
         self.n_attention_heads = 4
         self.qatten_hidden_dim = 32
-        self.model_dir = './models/'
+        self.model_dir = os.path.join(os.path.dirname(__file__), "models")
         self.optimizer = "RMS"
         self.learning_rate = 1e-2
 

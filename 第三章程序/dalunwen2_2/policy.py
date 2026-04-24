@@ -28,6 +28,9 @@ class QMIX:
         self.target_mixer_net = mixer_cls(self.conf).to(self.device)
 
         self.model_dir = self._model_roots()[0]
+        self.conf.loaded_model_tag = None
+        self.conf.loaded_drqn_path = None
+        self.conf.loaded_mixer_path = None
 
         if self.conf.load_model:
             self._load_model_if_available()
@@ -42,13 +45,16 @@ class QMIX:
         self.eval_hidden = None
         self.target_hidden = None
 
-        print("init {} nets finished!".format(self.mixer))
+        if getattr(self.conf, "verbose", False):
+            print("init {} nets finished!".format(self.mixer))
 
     def _model_roots(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
+        configured_root = os.path.abspath(os.path.join(self.conf.model_dir, self.conf.map_name))
+        default_root = os.path.abspath(os.path.join(base_dir, "models", self.conf.map_name))
         roots = [
-            os.path.abspath(os.path.join(base_dir, "models", self.conf.map_name)),
-            os.path.abspath(os.path.join(self.conf.model_dir, self.conf.map_name)),
+            configured_root,
+            default_root,
         ]
         deduped = []
         for root in roots:
@@ -58,9 +64,19 @@ class QMIX:
 
     def _candidate_model_pairs(self):
         candidates = []
+        seen_pairs = set()
         drqn_pattern = re.compile(r"^(\d+)_drqn_net_params\.pkl$")
         mixer_pattern = re.compile(rf"^(\d+)_{self.mixer}_mixer_params\.pkl$")
         legacy_qmix_pattern = re.compile(r"^(\d+)_qmix_net_params\.pkl$")
+        requested_tag = str(getattr(self.conf, "model_tag", "latest") or "latest").strip()
+
+        def add_candidate(tag, drqn_path, mixer_path):
+            pair_key = (os.path.abspath(drqn_path), os.path.abspath(mixer_path))
+            if pair_key in seen_pairs:
+                return
+            if os.path.exists(drqn_path) and os.path.exists(mixer_path):
+                seen_pairs.add(pair_key)
+                candidates.append((str(tag), drqn_path, mixer_path))
 
         for model_root in self._model_roots():
             if not os.path.isdir(model_root):
@@ -68,8 +84,6 @@ class QMIX:
 
             latest_drqn = os.path.join(model_root, "latest_drqn_net_params.pkl")
             latest_mixer = os.path.join(model_root, f"latest_{self.mixer}_mixer_params.pkl")
-            if os.path.exists(latest_drqn) and os.path.exists(latest_mixer):
-                candidates.append((latest_drqn, latest_mixer))
 
             drqn_files = {}
             mixer_files = {}
@@ -89,27 +103,45 @@ class QMIX:
                     if legacy_match:
                         mixer_files[legacy_match.group(1)] = os.path.join(model_root, filename)
 
+            if requested_tag == "latest":
+                add_candidate("latest", latest_drqn, latest_mixer)
+            else:
+                exact_drqn = drqn_files.get(requested_tag)
+                exact_mixer = mixer_files.get(requested_tag)
+                if exact_drqn and exact_mixer:
+                    add_candidate(requested_tag, exact_drqn, exact_mixer)
+                add_candidate("latest", latest_drqn, latest_mixer)
+
             common_prefixes = sorted(
                 set(drqn_files.keys()) & set(mixer_files.keys()),
                 key=lambda item: int(item),
                 reverse=True,
             )
             for prefix in common_prefixes:
-                candidates.append((drqn_files[prefix], mixer_files[prefix]))
+                add_candidate(prefix, drqn_files[prefix], mixer_files[prefix])
 
         return candidates
 
     def _load_model_if_available(self):
         loaded = False
-        for drqn_path, mixer_path in self._candidate_model_pairs():
+        for model_tag, drqn_path, mixer_path in self._candidate_model_pairs():
             if os.path.exists(drqn_path) and os.path.exists(mixer_path):
-                self.eval_drqn_net.load_state_dict(torch.load(drqn_path, map_location=self.device))
-                self.eval_mixer_net.load_state_dict(torch.load(mixer_path, map_location=self.device))
+                self.eval_drqn_net.load_state_dict(self._load_state_dict(drqn_path))
+                self.eval_mixer_net.load_state_dict(self._load_state_dict(mixer_path))
                 print("successfully load models:", drqn_path, mixer_path)
+                self.conf.loaded_model_tag = model_tag
+                self.conf.loaded_drqn_path = drqn_path
+                self.conf.loaded_mixer_path = mixer_path
                 loaded = True
                 break
         if not loaded:
             print("model files not found for {}, continue with random initialization.".format(self.mixer))
+
+    def _load_state_dict(self, model_path):
+        try:
+            return torch.load(model_path, map_location=self.device, weights_only=True)
+        except TypeError:
+            return torch.load(model_path, map_location=self.device)
 
     def learn(self, batch, max_episode_len, train_step, epsilon=None):
         episode_num = batch['o'].shape[0]
@@ -132,7 +164,8 @@ class QMIX:
         q_targets = q_targets.max(dim=3)[0]
 
         reward_mean = float(torch.max(r, dim=1)[0].mean().item())
-        print("reward mean", reward_mean)
+        if getattr(self.conf, "verbose", False):
+            print("reward mean", reward_mean)
 
         q_total_eval = self.eval_mixer_net(q_evals, s)
         q_total_target = self.target_mixer_net(q_targets, s_)

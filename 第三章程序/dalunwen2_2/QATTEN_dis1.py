@@ -11,5 +11,10 @@ from QMIX_dis1 import train
 
 if __name__ == "__main__":
     conf = Config()
-    print("training entry: QATTEN_dis1.py, current mixer:", conf.mixer)
+    print(
+        "training entry: QATTEN_dis1.py, current mixer:",
+        conf.mixer,
+        "model_tag:",
+        conf.model_tag,
+    )
     train()

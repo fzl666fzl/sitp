@@ -11,5 +11,10 @@ from onlineqmix import train
 
 if __name__ == "__main__":
     conf = Config()
-    print("online entry: QATTEN_online.py, current mixer:", conf.mixer)
+    print(
+        "online entry: QATTEN_online.py, current mixer:",
+        conf.mixer,
+        "model_tag:",
+        conf.model_tag,
+    )
     train()

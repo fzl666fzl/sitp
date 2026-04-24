@@ -8,12 +8,13 @@ from agent import Agents
 from utils import ReplayBuffer
 import onlinerollout
 
-from config import Config
+from config_qmix_baseline import Config
 
 
 conf = Config()
+conf.load_model = True
 print(
-    "online inference mixer:",
+    "online entry: QMIX_baseline_online.py, current mixer:",
     conf.mixer,
     "load_model:",
     conf.load_model,
