@@ -69,3 +69,47 @@ class QMIXNET(nn.Module):
         q_total = q_total.view(episode_num, -1, 1)
 
         return q_total
+
+
+class QattenMixer(nn.Module):
+    def __init__(self, conf):
+        super(QattenMixer, self).__init__()
+        self.conf = conf
+        self.n_agents = conf.n_agents
+        self.state_shape = conf.state_shape
+        self.n_attention_heads = conf.n_attention_heads
+        self.qatten_hidden_dim = conf.qatten_hidden_dim
+
+        self.state_proj = nn.Linear(self.state_shape, self.n_attention_heads * self.qatten_hidden_dim)
+        self.agent_proj = nn.Linear(1, self.n_attention_heads * self.qatten_hidden_dim)
+        self.agent_embed = nn.Embedding(self.n_agents, self.n_attention_heads * self.qatten_hidden_dim)
+        self.attn_proj = nn.Linear(self.qatten_hidden_dim, 1)
+        self.head_proj = nn.Linear(self.n_attention_heads, 1)
+        self.state_bias = nn.Sequential(
+            nn.Linear(self.state_shape, self.qatten_hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.qatten_hidden_dim, 1)
+        )
+        self.register_buffer("agent_ids", torch.arange(self.n_agents, dtype=torch.long))
+
+    def forward(self, q_values, states):
+        episode_num = q_values.size(0)
+        flat_q = q_values.reshape(-1, self.n_agents, 1)
+        flat_states = states.reshape(-1, self.state_shape)
+
+        state_context = self.state_proj(flat_states).view(
+            -1, 1, self.n_attention_heads, self.qatten_hidden_dim
+        )
+        agent_context = self.agent_proj(flat_q).view(
+            -1, self.n_agents, self.n_attention_heads, self.qatten_hidden_dim
+        )
+        agent_bias = self.agent_embed(self.agent_ids).view(
+            1, self.n_agents, self.n_attention_heads, self.qatten_hidden_dim
+        )
+
+        attn_logits = self.attn_proj(torch.tanh(state_context + agent_context + agent_bias)).squeeze(-1)
+        attn_weights = torch.softmax(attn_logits, dim=1)
+
+        head_q = (attn_weights * flat_q.expand(-1, -1, self.n_attention_heads)).sum(dim=1)
+        q_total = self.head_proj(head_q) + self.state_bias(flat_states)
+        return q_total.view(episode_num, -1, 1)

@@ -52,7 +52,7 @@ def train():
 
         pulses = []
         for episode_idx in range(conf.n_eposodes):##n_eposodes=1
-            episode, times, pp = rollout_dis.generate_episode(agents, conf,pulses,now_pulse,epoch,SI)
+            episode = rollout_dis.generate_episode(agents, conf,pulses,now_pulse,epoch,SI)
             episodes.append(episode)
 
             print("当前的节拍为",now_pulse)
@@ -88,8 +88,8 @@ def train():
         # for train_step in range(conf.train_steps):
             mini_batch = buffer.sample(min(buffer.current_size, conf.batch_size))  # obs； (64, 200, 3, 42)
 
-            agents.train(mini_batch, epoch)
-            # train_steps += 1
+            agents.train(mini_batch, train_steps)
+            train_steps += 1
 
     df_loss = pd.DataFrame(all_pulse)
     # df_loss.to_excel('节拍变化表1130.xlsx')

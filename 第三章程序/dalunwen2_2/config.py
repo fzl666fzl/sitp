@@ -15,7 +15,7 @@ class Config:
         self.evaluate_per_epoch = 100  # 100
         self.batch_size = 64 # 32
         self.buffer_size = int(1e2)
-        self.save_frequency = 8000  # 5000
+        self.save_frequency = 50  # 5000
         self.n_eposodes = 1  # 每个epoch有多少episodes
         self.train_steps = 5  # 每个epoch有多少train steps
         self.gamma = 0.8
@@ -45,9 +45,12 @@ class Config:
         self.drqn_hidden_dim = 64
         # qmix net
         # input: (batch_size, n_agents, qmix_hidden_dim)
+        self.mixer = "qatten"
         self.qmix_hidden_dim = 32
         self.two_hyper_layers = True ##Flase
         self.hyper_hidden_dim = 64
+        self.n_attention_heads = 4
+        self.qatten_hidden_dim = 32
         self.model_dir = './models/'
         self.optimizer = "RMS"
         self.learning_rate = 1e-2
