@@ -759,20 +759,24 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
                 print(pr)
 
                 for _ in range(station_num):
-                    if this_pulse < 660:
-                        tmp = 1
-                    elif this_pulse < 680:
-                        tmp = 0.7
-                    elif this_pulse < 700:
-                        tmp = 0.5
-                    else:
-                        tmp = -1
-                    smoothness_weight = getattr(conf, "smoothness_reward_weight", 0.0)
-                    if smoothness_weight:
+                    if getattr(conf, "continuous_final_reward", False):
+                        pulse_target = getattr(conf, "pulse_reward_target", 600.0)
+                        pulse_scale = getattr(conf, "pulse_reward_scale", 80.0)
                         smoothness = math.sqrt(times)
+                        smoothness_weight = getattr(conf, "smoothness_reward_weight", 0.0)
                         smoothness_target = getattr(conf, "smoothness_reward_target", 30.0)
-                        smoothness_bonus = (smoothness_target - smoothness) / smoothness_target
-                        tmp += smoothness_weight * max(-1.0, min(1.0, smoothness_bonus))
+                        pulse_score = (pulse_target - this_pulse) / pulse_scale
+                        smoothness_score = (smoothness_target - smoothness) / smoothness_target
+                        tmp = pulse_score + smoothness_weight * smoothness_score
+                    else:
+                        if this_pulse < 660:
+                            tmp = 1
+                        elif this_pulse < 680:
+                            tmp = 0.7
+                        elif this_pulse < 700:
+                            tmp = 0.5
+                        else:
+                            tmp = -1
                     r.append([tmp])
 
                 yield env.timeout(thispulse + 2000)
