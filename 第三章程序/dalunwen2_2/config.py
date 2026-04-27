@@ -11,27 +11,28 @@ class Config:
         # train setting
         self.last_action = True  # 使用最新动作选择动作
         self.reuse_network = True  # 对所有智能体使用同一个网络
-        self.n_epochs = 500  # 20000
+        self.n_epochs = 1000  # 20000
         self.evaluate_epoch = 2  # 20
         self.evaluate_per_epoch = 100  # 100
         self.batch_size = 64 # 32
         self.buffer_size = int(1e2)
-        self.save_frequency = 50
+        self.save_frequency = 5000
         self.n_eposodes = 1  # 每个epoch有多少episodes
         self.train_steps = 5  # 每个epoch有多少train steps
         self.gamma = 0.8
         self.grad_norm_clip = 10  # prevent gradient explosion
         self.update_target_params = 100  # 200
-        self.smoothness_reward_weight = 0.5
+        self.continuous_final_reward = True
+        self.pulse_reward_target = 600.0
+        self.pulse_reward_scale = 80.0
+        self.smoothness_reward_weight = 1.5
         self.smoothness_reward_target = 30.0
-        self.expert_action_loss_weight = 1.0
-        self.expert_action_table = ((4, 5), (2, 7), (1, 3), (2, 7))
         self.result_dir = './results/'
         self.verbose = False
 
         # test setting
         self.load_model = True
-        self.model_tag = "9"
+        self.model_tag = "5"
 
         # SC2 env setting
         self.map_name = '3m'

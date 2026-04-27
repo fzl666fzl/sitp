@@ -11,6 +11,6 @@ class Config(BaseConfig):
         self.load_model = True
         self.model_tag = "1"
         self.save_frequency = 50
+        self.continuous_final_reward = False
         self.smoothness_reward_weight = 0.0
-        self.expert_action_loss_weight = 0.0
         self.verbose = False

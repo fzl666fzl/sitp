@@ -1,7 +1,6 @@
 import os
 import re
 import torch
-import torch.nn.functional as F
 from NN import DRQN, QMIXNET, QattenMixer
 
 
@@ -160,8 +159,8 @@ class QMIX:
         terminated = batch['terminated'].to(self.device)
         mask = (1 - batch['padded'].float()).to(self.device)
 
-        q_eval_logits, q_targets = self.get_q_values(batch, max_episode_len)
-        q_evals = torch.gather(q_eval_logits, dim=3, index=u).squeeze(3)
+        q_evals, q_targets = self.get_q_values(batch, max_episode_len)
+        q_evals = torch.gather(q_evals, dim=3, index=u).squeeze(3)
         q_targets = q_targets.max(dim=3)[0]
 
         reward_mean = float(torch.max(r, dim=1)[0].mean().item())
@@ -175,21 +174,6 @@ class QMIX:
         td_error = q_total_eval - targets.detach()
         mask_td_error = mask * td_error
         loss = (mask_td_error ** 2).sum() / mask.sum()
-
-        expert_weight = getattr(self.conf, "expert_action_loss_weight", 0.0)
-        expert_table = getattr(self.conf, "expert_action_table", None)
-        if expert_weight and expert_table:
-            expert_actions = torch.tensor(expert_table, dtype=torch.long, device=self.device)
-            station_ids = torch.arange(max_episode_len, device=self.device).view(1, -1)
-            station_ids = station_ids.expand(episode_num, -1).clamp(0, expert_actions.shape[0] - 1)
-            expert_targets = expert_actions[station_ids]
-            expert_loss = F.cross_entropy(
-                q_eval_logits.reshape(-1, self.n_actions),
-                expert_targets.reshape(-1),
-                reduction="none",
-            ).view(episode_num, max_episode_len, self.n_agents)
-            expert_mask = mask.expand(-1, -1, self.n_agents)
-            loss = loss + expert_weight * (expert_loss * expert_mask).sum() / expert_mask.sum()
 
         print("*******开始训练({})*********".format(self.mixer), loss)
 
