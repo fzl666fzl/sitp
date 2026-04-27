@@ -134,7 +134,7 @@ class ReplayBuffer:
             "o": np.empty([self.size, self.episode_limit, self.n_agents, self.obs_shape]),
             "u": np.empty([self.size, self.episode_limit, self.n_agents, 1]),
             "s": np.empty([self.size, self.episode_limit, self.state_shape]),
-            "r": np.empty([self.size, 1]),
+            "r": np.empty([self.size, self.episode_limit, 1]),
             "o_": np.empty([self.size, self.episode_limit, self.n_agents, self.obs_shape]),
             "s_": np.empty([self.size, self.episode_limit, self.state_shape]),
             "avail_u": np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),

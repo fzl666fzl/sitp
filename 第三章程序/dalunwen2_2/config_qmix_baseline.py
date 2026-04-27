@@ -10,4 +10,5 @@ class Config(BaseConfig):
         self.model_dir = os.path.join(os.path.dirname(__file__), "models_qmix_baseline")
         self.load_model = True
         self.model_tag = "4"
+        self.save_frequency = 50
         self.verbose = False

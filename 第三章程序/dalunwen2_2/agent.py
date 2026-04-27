@@ -68,9 +68,11 @@ class Agents:
         # print("最大长度是",max_episode_len)
         max_episode_len = 4
         for key in batch.keys():
-            batch[key] = batch[key][:max_episode_len]
-        self.policy.learn(batch, max_episode_len, train_step, epsilon)
-        if train_step > 0 and train_step % self.conf.save_frequency == 0:
-            self.policy.save_model(train_step)
+            batch[key] = batch[key][:, :max_episode_len]
+
+        completed_train_step = train_step + 1
+        self.policy.learn(batch, max_episode_len, completed_train_step, epsilon)
+        if completed_train_step % self.conf.save_frequency == 0:
+            self.policy.save_model(completed_train_step)
 
  
