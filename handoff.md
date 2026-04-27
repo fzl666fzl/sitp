@@ -1,4 +1,238 @@
-﻿# Handoff: QATTEN vs QMIX scheduling experiment
+﻿
+#  第一次handoff
+
+## 1. 当前实验目标
+
+当前主目标是在目录 [第三章程序/dalunwen2_2](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2) 下，做一个**公平的 QMIX baseline vs Qatten 对比**。
+
+当前约定的比较口径是：
+
+- 同一个环境
+- 同一个数据集
+- 同样的 2 个 agent 决策逻辑
+- 同样的在线评估方式
+- 只比较 `mixer=qmix` 和 `mixer=qatten`
+
+当前更具体的工作重点是：
+
+1. 用固定评估模式筛 `best Qatten checkpoint`
+2. 用同样方式筛 `best QMIX baseline checkpoint`
+3. 最后比较 `best QMIX` 和 `best Qatten`
+
+---
+
+## 2. 已经修改过的文件
+
+当前窗口相关、且能确认改过的主要文件有：
+
+- [第三章程序/dalunwen2_2/NN.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/NN.py)
+- [第三章程序/dalunwen2_2/policy.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/policy.py)
+- [第三章程序/dalunwen2_2/config.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/config.py)
+- [第三章程序/dalunwen2_2/config_qmix_baseline.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/config_qmix_baseline.py)
+- [第三章程序/dalunwen2_2/parameter.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/parameter.py)
+- [第三章程序/dalunwen2_2/rollout_dis.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/rollout_dis.py)
+- [第三章程序/dalunwen2_2/onlinerollout.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/onlinerollout.py)
+- [第三章程序/dalunwen2_2/agent.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/agent.py)
+- [第三章程序/dalunwen2_2/utils.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/utils.py)
+- [第三章程序/dalunwen2_2/onlineqmix.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/onlineqmix.py)
+- [第三章程序/dalunwen2_2/QATTEN_online.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QATTEN_online.py)
+- [第三章程序/dalunwen2_2/QMIX_baseline_online.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QMIX_baseline_online.py)
+- [第三章程序/dalunwen2_2/QATTEN_dis1.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QATTEN_dis1.py)
+- [第三章程序/dalunwen2_2/QMIX_baseline_dis1.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QMIX_baseline_dis1.py)
+- [第三章程序/dalunwen2_2/README_运行说明.md](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/README_运行说明.md)
+
+---
+
+## 3. 每个文件具体改了什么
+
+| 文件 | 具体改动 |
+|---|---|
+| [NN.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/NN.py) | 在原有 `DRQN`、`QMIXNET` 基础上新增了 `QattenMixer`，让项目支持 `DRQN + Qatten`。 |
+| [policy.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/policy.py) | 把 mixer 改成可切换：`qmix -> QMIXNET`，`qatten -> QattenMixer`；支持自动扫描 checkpoint；支持 `latest` 和指定编号 `model_tag`；记录实际加载的 checkpoint。 |
+| [config.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/config.py) | 作为 Qatten 主配置，当前设置为 `mixer="qatten"`；增加 `model_tag`；模型目录改为相对当前文件；增加连续奖励参数；当前 `save_frequency` 已改回 `5000`。 |
+| [config_qmix_baseline.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/config_qmix_baseline.py) | 基于 `config.py` 继承出一套 QMIX baseline 配置；切到 `mixer="qmix"`；单独模型目录 `models_qmix_baseline`；单独 `model_tag`；`save_frequency=50`；关闭连续奖励和平滑奖励。 |
+| [parameter.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/parameter.py) | 去掉了导入时自动打印的大字典和自动执行；当前数据集切到 `工序约束_50.xlsx`。 |
+| [rollout_dis.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/rollout_dis.py) | 训练环境里把第 2 个 agent 真正接入决策；现在是 `agent0` 控工序规则，`agent1` 控班组规则；增加连续节拍/平滑联合奖励分支。 |
+| [onlinerollout.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/onlinerollout.py) | 在线评估环境里去掉大量调试输出；返回结构化摘要；支持 `evaluate=True` 时把 `epsilon` 强制视为 0；记录站位动作、站位完工时间、最终节拍、平滑指数。 |
+| [agent.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/agent.py) | `choose_action()` 在 `evaluate=True` 时不再随机探索；`train()` 修正了 batch 的 episode 维度切片，并按完成后的 `train_step` 决定是否保存模型。 |
+| [utils.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/utils.py) | 重写为更干净的 `ReplayBuffer`/`RolloutWorker` 版本，减少输出噪音，修正 reward/episode 的存储形状。 |
+| [onlineqmix.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/onlineqmix.py) | 改成简洁在线摘要输出；固定评估 seed；在线时使用 `evaluate=True`；输出算法、checkpoint、节拍、平滑指数、站位动作。 |
+| [QATTEN_online.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QATTEN_online.py) | 增加一个名字清晰的 Qatten 在线入口，内部复用 `onlineqmix.py`。 |
+| [QMIX_baseline_online.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QMIX_baseline_online.py) | 新增一个名字清晰的 QMIX baseline 在线入口，和 Qatten 评估口径保持一致。 |
+| [QATTEN_dis1.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QATTEN_dis1.py) | 新增一个名字清晰的 Qatten 训练入口，内部复用 `QMIX_dis1.py` 的主训练流程。 |
+| [QMIX_baseline_dis1.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QMIX_baseline_dis1.py) | 新增当前环境下的 QMIX baseline 训练入口，使用 baseline 配置和单独模型目录。 |
+| [README_运行说明.md](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/README_运行说明.md) | 增加了这轮改动和推荐运行方式说明，但内容里有一部分旧信息，继续用之前最好重新核对。 |
+
+---
+
+## 4. 为什么这么改
+
+主要原因有 6 个：
+
+1. 原项目只有 `QMIX`，用户想做 `Qatten` 改进，所以新增了 `QattenMixer`，但尽量不推翻原来的 `DRQN + mixer` 主结构。
+2. 原项目虽然写了 2 个 agent，但环境里基本只吃第 1 个 agent 的动作，所以把第 2 个 agent 接到“班组规则”上，让多智能体名副其实。
+3. 原项目在线输出太杂，前驱/后继字典、buffer 数组、内部状态都往外打，后面做实验记录很痛苦，所以改成了摘要输出。
+4. 原项目在线评估带随机探索，同一个 checkpoint 会跑出完全不同的结果，所以加了“固定 seed + epsilon=0”的评估模式。
+5. 原项目默认只适合 `latest`，不方便做 checkpoint 对比，所以新增了 `model_tag` 机制，可以直接评估 `1~9` 或 `latest`。
+6. 需要公平比较 Qatten 和 QMIX，所以单独做了一条 `QMIX baseline` 线，和当前环境保持一致，只改 mixer。
+
+---
+
+## 5. 当前正在跑的训练命令
+
+当前**没有确认正在运行的训练命令**。
+
+说明：
+
+- 这条线程当前没有 attached terminal session。
+- 目前能确认的是最近主要在跑在线评估，不是在持续训练。
+
+如果下一窗口要继续训练，当前推荐命令是：
+
+```powershell
+cd "C:\Users\Lenovo\Desktop\sitp\project\sitp\第三章程序\dalunwen2_2"
+python QATTEN_dis1.py
+```
+
+如果要继续跑 baseline：
+
+```powershell
+cd "C:\Users\Lenovo\Desktop\sitp\project\sitp\第三章程序\dalunwen2_2"
+python QMIX_baseline_dis1.py
+```
+
+补充：
+
+- 现在 [config.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/config.py) 里的 `save_frequency = 5000`，在 `n_epochs=1000` 这套训练规模下，Qatten 训练大概率**不会再自动产出新的 checkpoint**。
+- 但 [config_qmix_baseline.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/config_qmix_baseline.py) 里单独覆盖成了 `save_frequency = 50`，所以 QMIX baseline 训练仍会正常保存 `1~9` 这类 checkpoint。
+
+---
+
+## 6. 当前已知结果
+
+以下结果都指当前数据集 [工序约束_50.xlsx](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/工序约束_50.xlsx) 下、固定评估模式的结果。
+
+### Qatten
+
+- `checkpoint 4`
+  - 最终节拍：`600.3`
+  - 平滑指数：`17.586501`
+  - 各站位完工时间：`[555.0, 562.5, 581.4, 600.3]`
+  - 各站位动作：`[(0,0), (5,5), (5,5), (5,5)]`
+  - 这是目前窗口里看到的**最强候选结果**
+
+- `checkpoint 3`
+  - 最终节拍：`900.9`
+  - 平滑指数：`160.890652`
+  - 各站位完工时间：`[512.0, 576.9, 513.9, 900.9]`
+  - 动作：`[(1,1), (5,5), (5,5), (8,5)]`
+
+- `checkpoint 6`
+  - 最终节拍：`908.1`
+  - 平滑指数：`153.320791`
+  - 各站位完工时间：`[570.8, 549.0, 544.5, 908.1]`
+  - 动作基本全是 `[4,4]`
+
+### QMIX baseline
+
+- `checkpoint 3`
+  - 最终节拍：`908.1`
+  - 平滑指数：`156.126823`
+  - 各站位完工时间：`[549.2, 549.0, 544.5, 908.1]`
+  - 各站位动作：`[(3,3), (4,4), (4,4), (4,4)]`
+
+- `checkpoint 4`
+  - 和 `checkpoint 3` 完全一样
+
+- 用户已经观察到：`QMIX baseline 1~9` 在当前固定评估场景下看起来都一样，至少 `3` 和 `4` 已明确相同。
+
+当前粗结论：
+
+- **Qatten checkpoint 4 明显优于当前看到的 QMIX baseline 结果**
+- 但 Qatten 各 checkpoint 差异很大，因此不能只看 `latest`
+
+---
+
+## 7. 哪些方案已经证明效果不好
+
+目前已知不推荐继续走的方向有：
+
+1. **`latest QMIX` 直接对 `latest Qatten`**
+   - 这个比较不稳定，也不能代表 best checkpoint。
+
+2. **不固定 seed、在线评估继续随机探索**
+   - 之前同一个 `Qatten checkpoint 6` 能跑出 `664.0` 和 `908.1` 两种完全不同的结果。
+   - 这个问题已经通过“固定 seed + epsilon=0”解决。
+
+3. **把 `save_frequency` 设成 `5000` 后直接期待训练出新 checkpoint**
+   - 对当前 `Qatten` 配置来说，这样几乎不会保存出新 checkpoint。
+   - 所以如果下一步要继续训练并筛新的 Qatten 模型，必须先重新调整保存频率。
+
+4. **把 `Qatten checkpoint 3`、`6` 当成有效改进结果**
+   - 当前数据集下，这两个 checkpoint 明显不如 `checkpoint 4`。
+
+---
+
+## 8. 下一步最推荐做什么
+
+按优先级排序，当前最推荐的下一步是：
+
+1. **先不要继续大改结构**
+   - 目前最有价值的是把实验结论整理稳定，而不是继续堆功能。
+
+2. **把 `Qatten 1~9` 再完整筛一遍并记录表格**
+   - 当前已经知道 `4` 很强，`3/6` 较差。
+   - 需要确认 `1、2、5、7、8、9` 的结果，正式选出 `best Qatten`。
+
+3. **把 `QMIX baseline 1~9` 再确认一遍**
+   - 如果确实都一样，可以在论文里写成“QMIX 在当前评估场景下已稳定收敛到同一策略”。
+
+4. **整理正式对比表**
+   - 建议至少记录：算法、数据集、checkpoint、最终节拍、平滑指数、各站位完工时间。
+
+5. **如果要继续训练 Qatten，先改回更合理的保存频率**
+   - 例如 `50` 或 `100`
+   - 否则 `QATTEN_dis1.py` 跑完也不会留下可比较的新 checkpoint
+
+6. **把在线输出补上“数据集”和“设定节拍”字段**
+   - 这个之前已经讨论过，意义很大，但当前用户明确说先不要继续大改代码，所以暂时没动。
+
+---
+
+## 9. 新窗口继续时应该先读哪些文件
+
+建议新窗口按这个顺序快速接手：
+
+1. [handoff.md](/C:/Users/Lenovo/Desktop/sitp/project/sitp/handoff.md)
+2. [第三章程序/dalunwen2_2/parameter.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/parameter.py)
+3. [第三章程序/dalunwen2_2/config.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/config.py)
+4. [第三章程序/dalunwen2_2/config_qmix_baseline.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/config_qmix_baseline.py)
+5. [第三章程序/dalunwen2_2/policy.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/policy.py)
+6. [第三章程序/dalunwen2_2/NN.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/NN.py)
+7. [第三章程序/dalunwen2_2/onlinerollout.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/onlinerollout.py)
+8. [第三章程序/dalunwen2_2/agent.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/agent.py)
+9. [第三章程序/dalunwen2_2/onlineqmix.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/onlineqmix.py)
+10. [第三章程序/dalunwen2_2/QATTEN_online.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QATTEN_online.py)
+11. [第三章程序/dalunwen2_2/QMIX_baseline_online.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QMIX_baseline_online.py)
+12. [第三章程序/dalunwen2_2/QMIX_dis1.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QMIX_dis1.py)
+13. [第三章程序/dalunwen2_2/QATTEN_dis1.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QATTEN_dis1.py)
+14. [第三章程序/dalunwen2_2/QMIX_baseline_dis1.py](/C:/Users/Lenovo/Desktop/sitp/project/sitp/第三章程序/dalunwen2_2/QMIX_baseline_dis1.py)
+
+---
+
+## 补充：当前能确认的关键设置
+
+- 当前 Qatten 数据集：`工序约束_50.xlsx`
+- 当前 Qatten 在线默认 `model_tag`：`5`
+- 当前 QMIX baseline 在线默认 `model_tag`：`2`
+- 当前 Qatten `save_frequency`：`5000`
+- 当前 QMIX baseline `save_frequency`：`50`
+- 当前在线评估方式：固定 `seed=133`，并且 `epsilon=0`
+
+这几个值如果后面被改了，新的窗口一定要重新核对一遍。
+
+
+# 第二次handoff Handoff: QATTEN vs QMIX scheduling experiment
 
 ## 1. 当前实验目标
 

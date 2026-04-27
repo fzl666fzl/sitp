@@ -9,7 +9,7 @@ class Config(BaseConfig):
         self.mixer = "qmix"
         self.model_dir = os.path.join(os.path.dirname(__file__), "models_qmix_baseline")
         self.load_model = True
-        self.model_tag = "1"
+        self.model_tag = "2"
         self.save_frequency = 50
         self.continuous_final_reward = False
         self.smoothness_reward_weight = 0.0
