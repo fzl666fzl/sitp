@@ -81,10 +81,13 @@ class QattenMixer(nn.Module):
         self.qatten_hidden_dim = conf.qatten_hidden_dim
 
         self.state_proj = nn.Linear(self.state_shape, self.n_attention_heads * self.qatten_hidden_dim)
-        self.agent_proj = nn.Linear(1, self.n_attention_heads * self.qatten_hidden_dim)
-        self.agent_embed = nn.Embedding(self.n_agents, self.n_attention_heads * self.qatten_hidden_dim)
+        self.agent_proj = nn.Embedding(self.n_agents, self.n_attention_heads * self.qatten_hidden_dim)
         self.attn_proj = nn.Linear(self.qatten_hidden_dim, 1)
-        self.head_proj = nn.Linear(self.n_attention_heads, 1)
+        self.head_weight = nn.Sequential(
+            nn.Linear(self.state_shape, self.qatten_hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.qatten_hidden_dim, self.n_attention_heads),
+        )
         self.state_bias = nn.Sequential(
             nn.Linear(self.state_shape, self.qatten_hidden_dim),
             nn.ReLU(),
@@ -100,16 +103,14 @@ class QattenMixer(nn.Module):
         state_context = self.state_proj(flat_states).view(
             -1, 1, self.n_attention_heads, self.qatten_hidden_dim
         )
-        agent_context = self.agent_proj(flat_q).view(
-            -1, self.n_agents, self.n_attention_heads, self.qatten_hidden_dim
-        )
-        agent_bias = self.agent_embed(self.agent_ids).view(
+        agent_context = self.agent_proj(self.agent_ids).view(
             1, self.n_agents, self.n_attention_heads, self.qatten_hidden_dim
         )
 
-        attn_logits = self.attn_proj(torch.tanh(state_context + agent_context + agent_bias)).squeeze(-1)
+        attn_logits = self.attn_proj(torch.tanh(state_context + agent_context)).squeeze(-1)
         attn_weights = torch.softmax(attn_logits, dim=1)
 
         head_q = (attn_weights * flat_q.expand(-1, -1, self.n_attention_heads)).sum(dim=1)
-        q_total = self.head_proj(head_q) + self.state_bias(flat_states)
+        head_weight = F.softplus(self.head_weight(flat_states))
+        q_total = (head_weight * head_q).sum(dim=1, keepdim=True) + self.state_bias(flat_states)
         return q_total.view(episode_num, -1, 1)

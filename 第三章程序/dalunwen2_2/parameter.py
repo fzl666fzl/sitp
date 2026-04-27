@@ -31,7 +31,7 @@ def args_parser():
     freeorders = [1,2,3,4]
 
     # all_pro = pd.read_excel('/home/wyl/dalunwen2/工序约束_50.xlsx')  #### 所有工序编号及约束，pro 代表 procedure（工序）
-    data_file = os.path.join(os.path.dirname(__file__), '工序约束_50_11.xlsx')
+    data_file = os.path.join(os.path.dirname(__file__), '工序约束_50.xlsx')
     all_pro = pd.read_excel(data_file)  #### 所有工序编号及约束，pro 代表 procedure（工序）
     # all_pro = pd.read_excel('工序约束_50_2.xlsx')  #### 所有工序编号及约束，pro 代表 procedure（工序）
     # all_pro = pd.read_excel('工序约束_50_10.xlsx')  #### 所有工序编号及约束，pro 代表 procedure（工序）

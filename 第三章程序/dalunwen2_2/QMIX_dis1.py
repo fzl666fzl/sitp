@@ -17,6 +17,7 @@ import simpy
 
 from config import Config
 conf = Config()
+conf.load_model = False
 print("compat training entry: QMIX_dis1.py, current mixer:", conf.mixer)
 
 

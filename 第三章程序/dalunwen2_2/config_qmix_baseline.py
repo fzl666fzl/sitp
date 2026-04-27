@@ -9,6 +9,8 @@ class Config(BaseConfig):
         self.mixer = "qmix"
         self.model_dir = os.path.join(os.path.dirname(__file__), "models_qmix_baseline")
         self.load_model = True
-        self.model_tag = "4"
+        self.model_tag = "1"
         self.save_frequency = 50
+        self.smoothness_reward_weight = 0.0
+        self.expert_action_loss_weight = 0.0
         self.verbose = False
