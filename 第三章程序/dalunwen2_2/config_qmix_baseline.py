@@ -9,5 +9,5 @@ class Config(BaseConfig):
         self.mixer = "qmix"
         self.model_dir = os.path.join(os.path.dirname(__file__), "models_qmix_baseline")
         self.load_model = True
-        self.model_tag = "latest"
+        self.model_tag = "4"
         self.verbose = False

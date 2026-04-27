@@ -16,7 +16,7 @@ class Config:
         self.evaluate_per_epoch = 100  # 100
         self.batch_size = 64 # 32
         self.buffer_size = int(1e2)
-        self.save_frequency = 50  # 5000
+        self.save_frequency = 5000
         self.n_eposodes = 1  # 每个epoch有多少episodes
         self.train_steps = 5  # 每个epoch有多少train steps
         self.gamma = 0.8
@@ -27,7 +27,7 @@ class Config:
 
         # test setting
         self.load_model = True
-        self.model_tag = "6"
+        self.model_tag = "4"
 
         # SC2 env setting
         self.map_name = '3m'
