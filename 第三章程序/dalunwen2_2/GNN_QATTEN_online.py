@@ -41,6 +41,7 @@ def print_online_summary(conf, init_pulse, summary):
     print("\n===== GNN Qatten online summary =====")
     print("algorithm:", conf.mixer)
     print("use_gnn:", conf.use_gnn)
+    print("zero_gnn_embedding:", getattr(conf, "zero_gnn_embedding", False))
     print("load_model:", conf.load_model)
     print("configured checkpoint:", conf.model_tag)
     print("loaded checkpoint:", getattr(conf, "loaded_model_tag", None))

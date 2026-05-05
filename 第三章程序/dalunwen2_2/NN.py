@@ -31,14 +31,20 @@ class ProcedureGraphEncoder(nn.Module):
         self.input_proj = nn.Linear(self.node_features.size(1), hidden_dim)
         self.hidden_proj = nn.Linear(hidden_dim, hidden_dim)
         self.output_proj = nn.Linear(hidden_dim, embed_dim)
+        self.node_scorer = nn.Linear(embed_dim, 1)
 
-    def forward(self):
+    def node_embeddings(self):
         x = F.relu(self.input_proj(self.node_features))
         for _ in range(self.layers):
             x = torch.matmul(self.adjacency, x)
             x = F.relu(self.hidden_proj(x))
-        graph_embedding = x.mean(dim=0)
-        return self.output_proj(graph_embedding)
+        return self.output_proj(x)
+
+    def node_scores(self):
+        return self.node_scorer(self.node_embeddings()).squeeze(-1)
+
+    def forward(self):
+        return self.node_embeddings().mean(dim=0)
 
 
 class QMIXNET(nn.Module):

@@ -55,6 +55,7 @@ class Config:
         self.gnn_hidden_dim = 32
         self.gnn_embed_dim = 8
         self.gnn_layers = 2
+        self.gnn_node_count = 50
         # qmix net
         # input: (batch_size, n_agents, qmix_hidden_dim)
         self.mixer = "qatten"

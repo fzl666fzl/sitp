@@ -125,6 +125,7 @@ class ReplayBuffer:
         self.n_agents = conf.n_agents
         self.state_shape = conf.state_shape
         self.obs_shape = conf.obs_shape
+        self.gnn_node_count = getattr(conf, "gnn_node_count", 50)
         self.size = conf.buffer_size
 
         self.current_idx = 0
@@ -140,6 +141,8 @@ class ReplayBuffer:
             "avail_u": np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
             "avail_u_": np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
             "u_onehot": np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
+            "order_mask": np.empty([self.size, self.episode_limit, self.gnn_node_count]),
+            "order_mask_": np.empty([self.size, self.episode_limit, self.gnn_node_count]),
             "padded": np.empty([self.size, self.episode_limit, 1]),
             "terminated": np.empty([self.size, self.episode_limit, 1]),
         }
@@ -163,6 +166,12 @@ class ReplayBuffer:
             self.buffers["o_"][idxs] = episode_batch["o_"]
             self.buffers["s_"][idxs] = episode_batch["s_"]
             self.buffers["u_onehot"][idxs] = episode_batch["u_onehot"]
+            self.buffers["order_mask"][idxs] = episode_batch.get(
+                "order_mask", np.zeros([batch_size, self.episode_limit, self.gnn_node_count])
+            )
+            self.buffers["order_mask_"][idxs] = episode_batch.get(
+                "order_mask_", np.zeros([batch_size, self.episode_limit, self.gnn_node_count])
+            )
             self.buffers["padded"][idxs] = episode_batch["padded"]
             self.buffers["terminated"][idxs] = episode_batch["terminated"]
 

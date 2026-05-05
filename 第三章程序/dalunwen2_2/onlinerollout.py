@@ -6,6 +6,7 @@ import threading
 import math
 import random
 import builtins
+import os
 
 
 
@@ -77,6 +78,24 @@ def get_action_idx(actions, position, action_count):
     else:
         idx = 0
     return idx % action_count
+
+
+def get_available_orders(air):
+    order_candidates = []
+    for ppp in pro_id:
+        if air.isfinish[ppp] != 0:
+            continue
+        if ppp in freeorders:
+            order_candidates.append(ppp)
+            continue
+        is_free = True
+        for preorder in dict_preorder[ppp]:
+            if air.isfinish[preorder] == 0:
+                is_free = False
+                break
+        if is_free:
+            order_candidates.append(ppp)
+    return order_candidates
 '''1.3定义三个类
 class Team：小组类
 class Singelstation：站位类，定义了每个站位的实际工作时间（此数据统计暂时未调通）
@@ -694,6 +713,7 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
         env = simpy.Environment()
         o, u, r, s, o_,s_ = [], [], [], [], [], []
         au, avail_u_, u_onehot, terminate, padded = [], [], [], [], []
+        order_mask, order_mask_ = [], []
 
         allstation, station_list, air = reset_env(env,thispulse)
         reset_station(env, allstation, station_list)
@@ -702,6 +722,19 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
         pp = 0
         decision_trace = []
         result_holder = {"pulse": None, "times": None}
+        trace_decisions = os.getenv("ACTION_GNN_TRACE_DECISIONS", "").lower() == "true"
+        if trace_decisions and getattr(conf, "gnn_diagnostic_records", None) is None:
+            conf.record_gnn_diagnostics = True
+            conf.gnn_diagnostic_records = []
+
+        def annotate_latest_agent0_record(step_idx, **values):
+            records = getattr(conf, "gnn_diagnostic_records", None)
+            if not records:
+                return
+            for record in reversed(records):
+                if record.get("agent_id") == 0 and record.get("step") == step_idx:
+                    record.update(values)
+                    return
 
         def production(env, agents, air, allstation, station_list, evaluate, start_epsilon):
             # o, u, o_, r, s, s_, avail_u, u_onehot, terminate, padded = [], [], [], [], [], [], [], [], [], []
@@ -719,13 +752,33 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 obs, _ = get_obs(env, air, allstation,thispulse)
                 state, _ = get_states(env, air, allstation,thispulse)
                 actions, avail_actions, actions_onehot = [], [], []
+                now_time = env.now
+                if now_time >= 0 and now_time < thispulse:
+                    station_id = 0
+                elif now_time >= thispulse and now_time < 2 * thispulse:
+                    station_id = 1
+                elif now_time >= 2 * thispulse and now_time < 3 * thispulse:
+                    station_id = 2
+                else:
+                    station_id = 3
+                step_idx = len(decision_trace)
+                current_order_candidates = get_available_orders(air)
+                current_order_mask = agents.policy.get_order_mask_numpy(current_order_candidates)
 
                 # print("当前的obs为", obs)
                 # print("当前的state为", state)
                 for agent_id in range(n_agents):
                     avail_action = action_set
+                    decision_context = None
+                    if getattr(conf, "record_gnn_diagnostics", False):
+                        decision_context = {
+                            "step": int(step_idx),
+                            "station_id": int(station_id),
+                            "episode_time": float(env.now),
+                        }
                     action = agents.choose_action(state, last_action[agent_id], agent_id, avail_action,
-                                                  epsilon, evaluate)
+                                                  epsilon, evaluate, order_candidates=current_order_candidates,
+                                                  decision_context=decision_context)
 
                     # 生成动作的onehot编码
                     action_onehot = np.zeros(n_actions)
@@ -745,20 +798,41 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 else:
                     station_id = 3
                 print('此时的站位为：', station_id)
-                decision_trace.append({
+                decision_item = {
                     "station_id": int(station_id),
                     "proc_rule": int(actions[0]) if len(actions) > 0 else 0,
                     "team_rule": int(actions[1]) if len(actions) > 1 else 0,
-                })
+                    "valid_order_count": len(current_order_candidates),
+                }
+                decision_trace.append(decision_item)
                 nowstation = allstation[station_id]
+                before_finished_orders = set(air.order_finish)
                 nowstation.distribution(air, actions)
+                planned_order_ids = sorted(
+                    int(order_id)
+                    for team in nowstation.teams
+                    for order_id in team.order_buffer
+                )
+                decision_item["planned_order_ids"] = planned_order_ids
+                annotate_latest_agent0_record(
+                    step_idx,
+                    planned_order_ids=planned_order_ids,
+                    executed_rule_id=int(actions[0]) if len(actions) > 0 else 0,
+                )
                 if nowstation.id < 3:
                     yield env.timeout(thispulse)
                 else:
                     yield env.timeout(thispulse + 1000)
 
+                finished_order_ids = sorted(
+                    int(order_id) for order_id in set(air.order_finish) - before_finished_orders
+                )
+                decision_item["finished_order_ids"] = finished_order_ids
+                annotate_latest_agent0_record(step_idx, finished_order_ids=finished_order_ids)
                 next_state, done = get_states(env, air, allstation,thispulse)
                 next_obs,done = get_states(env,air,allstation,thispulse)
+                next_order_candidates = get_available_orders(air)
+                next_order_mask = agents.policy.get_order_mask_numpy(next_order_candidates)
                 reward = get_reward(env.now, allstation, air,thispulse)
                 # print("actions: ", actions)
 
@@ -771,6 +845,8 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 pr.append(reward)
                 o_.append([next_state,next_state])
                 s_.append(next_state)
+                order_mask.append(current_order_mask)
+                order_mask_.append(next_order_mask)
                 au.append(avail_actions)
                 terminate.append([done])
                 padded.append([0.])
@@ -855,10 +931,60 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
         episode['avail_u'] = action_set.copy()
         episode['avail_u_'] = action_set.copy()
         episode['u_onehot'] = u_onehot.copy()
+        episode['order_mask'] = order_mask.copy()
+        episode['order_mask_'] = order_mask_.copy()
         episode['padded'] = padded.copy()
         episode['terminated'] = terminate.copy()
         final_pulse = result_holder["pulse"]
         smoothness_raw = result_holder["times"]
+        trace_records = getattr(conf, "gnn_diagnostic_records", None) or []
+        agent0_records = [item for item in trace_records if item.get("agent_id") == 0]
+        gnn_trace_summary = None
+        if agent0_records:
+            gnn_trace_summary = {
+                "total_decisions": len(agent0_records),
+                "q_changed_count": int(sum(item.get("q_changed", 0) for item in agent0_records)),
+                "argmax_changed_count": int(sum(item.get("action_changed", 0) for item in agent0_records)),
+                "executed_action_changed_count": int(
+                    sum(item.get("executed_action_changed", 0) for item in agent0_records)
+                ),
+                "agent0_changed_count": int(sum(item.get("action_changed", 0) for item in agent0_records)),
+                "mean_abs_q_delta": round(
+                    float(np.mean([item.get("mean_abs_q_delta", 0.0) for item in agent0_records])), 6
+                ),
+                "mean_margin": round(
+                    float(np.mean([item.get("q_margin_zero", 0.0) for item in agent0_records])), 6
+                ),
+                "mean_q_delta_to_margin": round(
+                    float(np.mean([item.get("q_delta_to_margin", 0.0) for item in agent0_records])), 6
+                ),
+            }
+        if trace_decisions and gnn_trace_summary is not None:
+            builtins.print("\n===== ACTION_GNN_TRACE_DECISIONS summary =====")
+            builtins.print(gnn_trace_summary)
+            changed_records = [
+                item for item in agent0_records if item.get("action_changed") or item.get("q_changed")
+            ][:3]
+            for item in changed_records:
+                builtins.print({
+                    "step": item.get("step"),
+                    "station": item.get("station_id"),
+                    "episode_time": item.get("episode_time"),
+                    "q_zero": item.get("q_zero"),
+                    "gnn_bias": item.get("gnn_bias"),
+                    "q_normal": item.get("q_normal"),
+                    "zero_action": item.get("zero_action"),
+                    "normal_action": item.get("normal_action"),
+                    "executed_action": item.get("executed_action"),
+                    "q_margin_zero": round(float(item.get("q_margin_zero", 0.0)), 6),
+                    "max_abs_bias": round(float(item.get("max_abs_bias", 0.0)), 6),
+                    "q_delta_to_margin": round(float(item.get("q_delta_to_margin", 0.0)), 6),
+                    "rule_node_ids": item.get("rule_node_ids"),
+                    "selected_rule_node_id": item.get("selected_rule_node_id"),
+                    "valid_order_count": item.get("valid_order_count"),
+                    "planned_order_ids": item.get("planned_order_ids"),
+                    "finished_order_ids": item.get("finished_order_ids"),
+                })
         summary = {
             "final_pulse": round(float(final_pulse), 3) if final_pulse is not None else None,
             "smoothness_index": round(float(math.sqrt(smoothness_raw)), 6)
@@ -866,6 +992,7 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
             else None,
             "station_times": get_station_times(allstation),
             "station_actions": decision_trace,
+            "gnn_trace_summary": gnn_trace_summary,
         }
         return episode,times,pp,summary
 

@@ -56,18 +56,32 @@ def build_procedure_graph(args):
     adjacency = degree_inv_sqrt[:, None] * adjacency * degree_inv_sqrt[None, :]
 
     features = []
+    rule_features = []
     for pro_id in pro_ids:
         pre_count = len(_as_int_list(args.dict_preorder.get(pro_id, [])))
         post_count = len(_as_int_list(args.dict_postorder.get(pro_id, [])))
+        postnum = float(args.dict_postnum.get(pro_id, 0.0))
+        posttime = float(args.dict_posttime.get(pro_id, 0.0))
+        postsinktime = float(args.dict_postsinktime.get(pro_id, 0.0))
         features.append([
             float(args.dict_time.get(pro_id, 0.0)),
             float(args.dict_isfirstprocedure.get(pro_id, 0.0)),
             float(pre_count),
             float(post_count),
-            float(args.dict_postnum.get(pro_id, 0.0)),
-            float(args.dict_posttime.get(pro_id, 0.0)),
-            float(args.dict_postsinktime.get(pro_id, 0.0)),
+            postnum,
+            posttime,
+            postsinktime,
+        ])
+        rule_features.append([
+            postnum / 4.0,
+            (posttime - 33.0) / (1276.0 - 33.0),
+            (postsinktime - 33.0) / (5006.0 - 33.0),
         ])
 
     features = _normalize_columns(np.array(features, dtype=np.float32))
-    return torch.tensor(adjacency, dtype=torch.float32), torch.tensor(features, dtype=torch.float32)
+    return (
+        torch.tensor(adjacency, dtype=torch.float32),
+        torch.tensor(features, dtype=torch.float32),
+        pro_ids,
+        torch.tensor(rule_features, dtype=torch.float32),
+    )

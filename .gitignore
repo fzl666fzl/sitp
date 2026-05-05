@@ -18,3 +18,6 @@ data/
 .venv/
 __pycache__/
 *.pyc
+
+# GNN-QATTEN local checkpoints
+**/dalunwen2_2/models_gnn_qatten*/

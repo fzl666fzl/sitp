@@ -69,6 +69,24 @@ def get_action_idx(actions, position, action_count):
     else:
         idx = 0
     return idx % action_count
+
+
+def get_available_orders(air):
+    order_candidates = []
+    for ppp in pro_id:
+        if air.isfinish[ppp] != 0:
+            continue
+        if ppp in freeorders:
+            order_candidates.append(ppp)
+            continue
+        is_free = True
+        for preorder in dict_preorder[ppp]:
+            if air.isfinish[preorder] == 0:
+                is_free = False
+                break
+        if is_free:
+            order_candidates.append(ppp)
+    return order_candidates
 '''1.3定义三个类
 class Team：小组类
 class Singelstation：站位类，定义了每个站位的实际工作时间（此数据统计暂时未调通）
@@ -681,6 +699,7 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
     env = simpy.Environment()
     o, u, r, s, o_, s_ = [], [], [], [], [], []
     au, avail_u_, u_onehot, terminate, padded = [], [], [], [], []
+    order_mask, order_mask_ = [], []
     step_rewards = []
 
     allstation, station_list, air = reset_env(env, thispulse)
@@ -697,6 +716,8 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
             obs, _ = get_obs(env, air, allstation, thispulse)
             state, _ = get_states(env, air, allstation, thispulse)
             actions, avail_actions, actions_onehot = [], [], []
+            current_order_candidates = get_available_orders(air)
+            current_order_mask = agents.policy.get_order_mask_numpy(current_order_candidates)
 
             for agent_id in range(n_agents):
                 avail_action = action_set
@@ -707,6 +728,7 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
                     avail_action,
                     epsilon,
                     evaluate,
+                    order_candidates=current_order_candidates,
                 )
 
                 action_onehot = np.zeros(n_actions)
@@ -734,6 +756,8 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
                 yield env.timeout(thispulse + 1000)
 
             next_state, done = get_states(env, air, allstation, thispulse)
+            next_order_candidates = get_available_orders(air)
+            next_order_mask = agents.policy.get_order_mask_numpy(next_order_candidates)
             reward = get_reward(env.now, allstation, air, thispulse)
             step_rewards.append(reward)
 
@@ -744,6 +768,8 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
             pr.append(reward)
             o_.append([next_state, next_state])
             s_.append(next_state)
+            order_mask.append(current_order_mask)
+            order_mask_.append(next_order_mask)
             au.append(avail_actions)
             terminate.append([done])
             padded.append([0.0])
@@ -807,6 +833,8 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
     o_ = pad_or_trim(o_, zero_obs)
     s_ = pad_or_trim(s_, zero_state)
     u_onehot = pad_or_trim(u_onehot, np.zeros((n_agents, n_actions)).tolist())
+    order_mask = pad_or_trim(order_mask, np.zeros(conf.gnn_node_count).tolist())
+    order_mask_ = pad_or_trim(order_mask_, np.zeros(conf.gnn_node_count).tolist())
     padded = pad_or_trim(padded, [1.0])
     terminate = pad_or_trim(terminate, [1.0])
 
@@ -819,6 +847,8 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
     episode['avail_u'] = action_set.copy()
     episode['avail_u_'] = action_set.copy()
     episode['u_onehot'] = u_onehot.copy()
+    episode['order_mask'] = order_mask.copy()
+    episode['order_mask_'] = order_mask_.copy()
     episode['padded'] = padded.copy()
     episode['terminated'] = terminate.copy()
     return episode
