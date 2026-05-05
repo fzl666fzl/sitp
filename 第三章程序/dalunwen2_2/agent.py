@@ -33,6 +33,9 @@ class Agents:
             inputs = np.hstack((inputs, last_action))
         if self.conf.reuse_network:
             inputs = np.hstack((inputs, agents_id))
+        graph_embedding = self.policy.get_eval_graph_embedding_numpy()
+        if graph_embedding is not None:
+            inputs = np.hstack((inputs, graph_embedding))
         hidden_state = self.policy.eval_hidden[:, agent_num, :]
 
         inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0).to(self.device) # (42,) -> (1,42)

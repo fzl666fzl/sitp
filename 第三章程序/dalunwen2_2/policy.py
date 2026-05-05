@@ -1,7 +1,9 @@
 import os
 import re
 import torch
-from NN import DRQN, QMIXNET, QattenMixer
+from graph_utils import build_procedure_graph
+from NN import DRQN, QMIXNET, ProcedureGraphEncoder, QattenMixer
+from parameter import args_parser
 
 
 class QMIX:
@@ -13,12 +15,22 @@ class QMIX:
         self.state_shape = self.conf.state_shape
         self.obs_shape = self.conf.obs_shape
         self.mixer = self.conf.mixer.lower()
+        self.use_gnn = bool(getattr(self.conf, "use_gnn", False))
         input_shape = self.obs_shape
 
         if self.conf.last_action:
             input_shape += self.n_actions
         if self.conf.reuse_network:
             input_shape += self.n_agents
+        if self.use_gnn:
+            input_shape += self.conf.gnn_embed_dim
+
+        self.eval_graph_encoder = None
+        self.target_graph_encoder = None
+        if self.use_gnn:
+            adjacency, node_features = build_procedure_graph(args_parser())
+            self.eval_graph_encoder = ProcedureGraphEncoder(adjacency, node_features, self.conf).to(self.device)
+            self.target_graph_encoder = ProcedureGraphEncoder(adjacency, node_features, self.conf).to(self.device)
 
         self.eval_drqn_net = DRQN(input_shape, self.conf).to(self.device)
         self.target_drqn_net = DRQN(input_shape, self.conf).to(self.device)
@@ -31,14 +43,19 @@ class QMIX:
         self.conf.loaded_model_tag = None
         self.conf.loaded_drqn_path = None
         self.conf.loaded_mixer_path = None
+        self.conf.loaded_gnn_path = None
 
         if self.conf.load_model:
             self._load_model_if_available()
 
         self.target_drqn_net.load_state_dict(self.eval_drqn_net.state_dict())
         self.target_mixer_net.load_state_dict(self.eval_mixer_net.state_dict())
+        if self.use_gnn:
+            self.target_graph_encoder.load_state_dict(self.eval_graph_encoder.state_dict())
 
         self.eval_parameters = list(self.eval_mixer_net.parameters()) + list(self.eval_drqn_net.parameters())
+        if self.use_gnn:
+            self.eval_parameters += list(self.eval_graph_encoder.parameters())
         if self.conf.optimizer == "RMS":
             self.optimizer = torch.optim.RMSprop(self.eval_parameters, lr=self.conf.learning_rate)
 
@@ -67,16 +84,24 @@ class QMIX:
         seen_pairs = set()
         drqn_pattern = re.compile(r"^(\d+)_drqn_net_params\.pkl$")
         mixer_pattern = re.compile(rf"^(\d+)_{self.mixer}_mixer_params\.pkl$")
+        gnn_pattern = re.compile(r"^(\d+)_gnn_encoder_params\.pkl$")
         legacy_qmix_pattern = re.compile(r"^(\d+)_qmix_net_params\.pkl$")
         requested_tag = str(getattr(self.conf, "model_tag", "latest") or "latest").strip()
 
-        def add_candidate(tag, drqn_path, mixer_path):
-            pair_key = (os.path.abspath(drqn_path), os.path.abspath(mixer_path))
+        def add_candidate(tag, drqn_path, mixer_path, gnn_path=None):
+            if not self.use_gnn:
+                gnn_path = None
+            pair_key = (
+                os.path.abspath(drqn_path),
+                os.path.abspath(mixer_path),
+                os.path.abspath(gnn_path) if gnn_path else "",
+            )
             if pair_key in seen_pairs:
                 return
-            if os.path.exists(drqn_path) and os.path.exists(mixer_path):
+            has_required_gnn = (not self.use_gnn) or (gnn_path and os.path.exists(gnn_path))
+            if os.path.exists(drqn_path) and os.path.exists(mixer_path) and has_required_gnn:
                 seen_pairs.add(pair_key)
-                candidates.append((str(tag), drqn_path, mixer_path))
+                candidates.append((str(tag), drqn_path, mixer_path, gnn_path))
 
         for model_root in self._model_roots():
             if not os.path.isdir(model_root):
@@ -84,13 +109,20 @@ class QMIX:
 
             latest_drqn = os.path.join(model_root, "latest_drqn_net_params.pkl")
             latest_mixer = os.path.join(model_root, f"latest_{self.mixer}_mixer_params.pkl")
+            latest_gnn = os.path.join(model_root, "latest_gnn_encoder_params.pkl")
 
             drqn_files = {}
             mixer_files = {}
+            gnn_files = {}
             for filename in os.listdir(model_root):
                 drqn_match = drqn_pattern.match(filename)
                 if drqn_match:
                     drqn_files[drqn_match.group(1)] = os.path.join(model_root, filename)
+                    continue
+
+                gnn_match = gnn_pattern.match(filename)
+                if gnn_match:
+                    gnn_files[gnn_match.group(1)] = os.path.join(model_root, filename)
                     continue
 
                 mixer_match = mixer_pattern.match(filename)
@@ -104,38 +136,42 @@ class QMIX:
                         mixer_files[legacy_match.group(1)] = os.path.join(model_root, filename)
 
             if requested_tag == "latest":
-                add_candidate("latest", latest_drqn, latest_mixer)
+                add_candidate("latest", latest_drqn, latest_mixer, latest_gnn)
             else:
                 exact_drqn = drqn_files.get(requested_tag)
                 exact_mixer = mixer_files.get(requested_tag)
+                exact_gnn = gnn_files.get(requested_tag)
                 if exact_drqn and exact_mixer:
-                    add_candidate(requested_tag, exact_drqn, exact_mixer)
-                add_candidate("latest", latest_drqn, latest_mixer)
+                    add_candidate(requested_tag, exact_drqn, exact_mixer, exact_gnn)
+                add_candidate("latest", latest_drqn, latest_mixer, latest_gnn)
 
-            common_prefixes = sorted(
-                set(drqn_files.keys()) & set(mixer_files.keys()),
-                key=lambda item: int(item),
-                reverse=True,
-            )
+            common_prefixes = set(drqn_files.keys()) & set(mixer_files.keys())
+            if self.use_gnn:
+                common_prefixes = common_prefixes & set(gnn_files.keys())
+            common_prefixes = sorted(common_prefixes, key=lambda item: int(item), reverse=True)
             for prefix in common_prefixes:
-                add_candidate(prefix, drqn_files[prefix], mixer_files[prefix])
+                add_candidate(prefix, drqn_files[prefix], mixer_files[prefix], gnn_files.get(prefix))
 
         return candidates
 
     def _load_model_if_available(self):
         loaded = False
-        for model_tag, drqn_path, mixer_path in self._candidate_model_pairs():
+        for model_tag, drqn_path, mixer_path, gnn_path in self._candidate_model_pairs():
             if os.path.exists(drqn_path) and os.path.exists(mixer_path):
                 self.eval_drqn_net.load_state_dict(self._load_state_dict(drqn_path))
                 self.eval_mixer_net.load_state_dict(self._load_state_dict(mixer_path))
+                if self.use_gnn and gnn_path:
+                    self.eval_graph_encoder.load_state_dict(self._load_state_dict(gnn_path))
                 print("successfully load models:", drqn_path, mixer_path)
                 self.conf.loaded_model_tag = model_tag
                 self.conf.loaded_drqn_path = drqn_path
                 self.conf.loaded_mixer_path = mixer_path
+                self.conf.loaded_gnn_path = gnn_path
                 loaded = True
                 break
         if not loaded:
-            print("model files not found for {}, continue with random initialization.".format(self.mixer))
+            suffix = " with GNN" if self.use_gnn else ""
+            print("model files not found for {}{}, continue with random initialization.".format(self.mixer, suffix))
 
     def _load_state_dict(self, model_path):
         try:
@@ -185,6 +221,8 @@ class QMIX:
         if train_step > 0 and train_step % self.conf.update_target_params == 0:
             self.target_drqn_net.load_state_dict(self.eval_drqn_net.state_dict())
             self.target_mixer_net.load_state_dict(self.eval_mixer_net.state_dict())
+            if self.use_gnn:
+                self.target_graph_encoder.load_state_dict(self.eval_graph_encoder.state_dict())
 
     def get_q_values(self, batch, max_episode_len):
         episode_num = batch['o'].shape[0]
@@ -209,6 +247,18 @@ class QMIX:
         q_targets = torch.stack(q_targets, dim=1)
         return q_evals, q_targets
 
+    def get_eval_graph_embedding_numpy(self):
+        if not self.use_gnn:
+            return None
+        with torch.no_grad():
+            return self.eval_graph_encoder().detach().cpu().numpy()
+
+    def _graph_embedding_for_batch(self, encoder, episode_num, device):
+        if not self.use_gnn:
+            return None
+        graph_embedding = encoder().to(device)
+        return graph_embedding.view(1, 1, -1).expand(episode_num, self.n_agents, -1)
+
     def _get_inputs(self, batch, transition_idx):
         o = batch['o'][:, transition_idx]
         o_ = batch['o_'][:, transition_idx]
@@ -231,6 +281,10 @@ class QMIX:
             inputs.append(agent_ids)
             inputs_.append(agent_ids)
 
+        if self.use_gnn:
+            inputs.append(self._graph_embedding_for_batch(self.eval_graph_encoder, episode_num, o.device))
+            inputs_.append(self._graph_embedding_for_batch(self.target_graph_encoder, episode_num, o_.device))
+
         inputs = torch.cat([x.reshape(episode_num * self.n_agents, -1) for x in inputs], dim=1)
         inputs_ = torch.cat([x.reshape(episode_num * self.n_agents, -1) for x in inputs_], dim=1)
         return inputs, inputs_
@@ -252,3 +306,8 @@ class QMIX:
         torch.save(self.eval_mixer_net.state_dict(), mixer_path)
         torch.save(self.eval_drqn_net.state_dict(), latest_drqn_path)
         torch.save(self.eval_mixer_net.state_dict(), latest_mixer_path)
+        if self.use_gnn:
+            gnn_path = os.path.join(self.model_dir, f"{num}_gnn_encoder_params.pkl")
+            latest_gnn_path = os.path.join(self.model_dir, "latest_gnn_encoder_params.pkl")
+            torch.save(self.eval_graph_encoder.state_dict(), gnn_path)
+            torch.save(self.eval_graph_encoder.state_dict(), latest_gnn_path)

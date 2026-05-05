@@ -51,6 +51,10 @@ class Config:
         # model structure
         # drqn net
         self.drqn_hidden_dim = 64
+        self.use_gnn = False
+        self.gnn_hidden_dim = 32
+        self.gnn_embed_dim = 8
+        self.gnn_layers = 2
         # qmix net
         # input: (batch_size, n_agents, qmix_hidden_dim)
         self.mixer = "qatten"

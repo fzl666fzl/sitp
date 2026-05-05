@@ -17,6 +17,30 @@ class DRQN(nn.Module):
         q = self.fc2(h)
         return q, h
 
+
+class ProcedureGraphEncoder(nn.Module):
+    def __init__(self, adjacency, node_features, conf):
+        super(ProcedureGraphEncoder, self).__init__()
+        self.conf = conf
+        hidden_dim = conf.gnn_hidden_dim
+        embed_dim = conf.gnn_embed_dim
+        self.layers = max(1, int(getattr(conf, "gnn_layers", 2)))
+
+        self.register_buffer("adjacency", adjacency.float())
+        self.register_buffer("node_features", node_features.float())
+        self.input_proj = nn.Linear(self.node_features.size(1), hidden_dim)
+        self.hidden_proj = nn.Linear(hidden_dim, hidden_dim)
+        self.output_proj = nn.Linear(hidden_dim, embed_dim)
+
+    def forward(self):
+        x = F.relu(self.input_proj(self.node_features))
+        for _ in range(self.layers):
+            x = torch.matmul(self.adjacency, x)
+            x = F.relu(self.hidden_proj(x))
+        graph_embedding = x.mean(dim=0)
+        return self.output_proj(graph_embedding)
+
+
 class QMIXNET(nn.Module):
     def __init__(self, conf):
         super(QMIXNET, self).__init__()
