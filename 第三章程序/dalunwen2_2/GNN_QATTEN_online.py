@@ -41,11 +41,24 @@ def print_online_summary(conf, init_pulse, summary):
     print("\n===== GNN Qatten online summary =====")
     print("algorithm:", conf.mixer)
     print("use_gnn:", conf.use_gnn)
+    print("use_gnn_graph_embedding:", getattr(conf, "use_gnn_graph_embedding", None))
+    print("use_gnn_action_bias:", getattr(conf, "use_gnn_action_bias", None))
+    print("gnn_action_fusion_mode:", getattr(conf, "gnn_action_fusion_mode", None))
+    print("gnn_action_bias_weight:", getattr(conf, "gnn_action_bias_weight", None))
+    print("gnn_margin_threshold:", getattr(conf, "gnn_margin_threshold", None))
+    print("gnn_topk:", getattr(conf, "gnn_topk", None))
+    print("gnn_rerank_weight:", getattr(conf, "gnn_rerank_weight", None))
+    print("gnn_use_load_penalty:", getattr(conf, "gnn_use_load_penalty", None))
+    print("gnn_load_penalty_weight:", getattr(conf, "gnn_load_penalty_weight", None))
     print("zero_gnn_embedding:", getattr(conf, "zero_gnn_embedding", False))
     print("load_model:", conf.load_model)
     print("configured checkpoint:", conf.model_tag)
     print("loaded checkpoint:", getattr(conf, "loaded_model_tag", None))
+    print("loaded drqn path:", getattr(conf, "loaded_drqn_path", None))
+    print("loaded mixer path:", getattr(conf, "loaded_mixer_path", None))
     print("loaded gnn path:", getattr(conf, "loaded_gnn_path", None))
+    print("trainable parameters:", getattr(conf, "online_trainable_parameters", None))
+    print("input shape:", getattr(conf, "online_input_shape", None))
     print("eval mode:", "fixed seed + epsilon=0")
     print("eval seed:", conf.seed)
     print("initial pulse:", init_pulse)
@@ -64,6 +77,17 @@ def print_online_summary(conf, init_pulse, summary):
 def train():
     set_eval_seed(conf)
     agents = Agents(conf)
+    conf.online_trainable_parameters = sum(
+        param.numel() for param in agents.policy.eval_parameters if param.requires_grad
+    )
+    input_shape = conf.obs_shape
+    if conf.last_action:
+        input_shape += conf.n_actions
+    if conf.reuse_network:
+        input_shape += conf.n_agents
+    if getattr(conf, "use_gnn", False) and getattr(conf, "use_gnn_graph_embedding", False):
+        input_shape += conf.gnn_embed_dim
+    conf.online_input_shape = input_shape
     buffer = ReplayBuffer(conf)
 
     pulses = []

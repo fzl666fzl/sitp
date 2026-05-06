@@ -56,6 +56,15 @@ class Config:
         self.gnn_embed_dim = 8
         self.gnn_layers = 2
         self.gnn_node_count = 50
+        self.use_gnn_graph_embedding = False
+        self.use_gnn_action_bias = False
+        self.gnn_action_bias_weight = 0.5
+        self.gnn_bias_norm_scope = "candidate"
+        self.gnn_bias_clip = 1.0
+        self.gnn_aux_target_type = "successor_time"
+        self.gnn_aux_loss_type = "pairwise_rank"
+        self.gnn_aux_weight = 0.02
+        self.gnn_bias_var_weight = 0.0
         # qmix net
         # input: (batch_size, n_agents, qmix_hidden_dim)
         self.mixer = "qatten"

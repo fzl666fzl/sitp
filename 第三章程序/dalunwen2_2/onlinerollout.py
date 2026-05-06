@@ -96,6 +96,77 @@ def get_available_orders(air):
         if is_free:
             order_candidates.append(ppp)
     return order_candidates
+
+
+def _order_list(value):
+    if value in (None, 0):
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return [value]
+
+
+def _normalise_penalties(values):
+    penalties = np.asarray(values, dtype=np.float32)
+    finite_mask = np.isfinite(penalties)
+    if not finite_mask.any():
+        return [0.0 for _ in values]
+    finite_values = penalties[finite_mask]
+    min_value = float(np.min(finite_values))
+    max_value = float(np.max(finite_values))
+    if max_value - min_value <= 1e-8:
+        penalties[finite_mask] = 0.0
+    else:
+        penalties[finite_mask] = (finite_values - min_value) / (max_value - min_value)
+    penalties[~finite_mask] = 0.0
+    return [round(float(item), 6) for item in penalties.tolist()]
+
+
+def estimate_action_load_penalty(nowstation, air, order_candidates):
+    if not order_candidates:
+        return [0.0 for _ in action_set]
+
+    penalties = []
+    base_loads = np.asarray(
+        [nowstation.teams[i].time_past1 for i in range(team_num)],
+        dtype=np.float32,
+    )
+    base_max_load = float(np.max(base_loads)) if base_loads.size else 0.0
+
+    for proc_action_idx in range(len(action_set)):
+        order_free = set(order_candidates)
+        orders_finish = set(air.order_finish)
+        loads = base_loads.copy()
+        team_free = set(range(team_num))
+        safety_count = 0
+
+        while order_free and team_free and safety_count < pro_num:
+            safety_count += 1
+            thisorder = nowstation.cal_pri(order_free, proc_action_idx)
+            if thisorder not in order_free:
+                break
+            team_id = min(team_free, key=lambda item: loads[item])
+            time_w = (team_id - 1) / 10 + 1
+            duration = float(dict_time[thisorder]) * time_w
+            if nowstation.id < station_num - 1 and loads[team_id] + duration > nowstation.pulse:
+                team_free.remove(team_id)
+                continue
+
+            loads[team_id] += duration
+            order_free.remove(thisorder)
+            orders_finish.add(thisorder)
+            for order in _order_list(dict_postorder[thisorder]):
+                if order in orders_finish:
+                    continue
+                preorders = _order_list(dict_preorder[order])
+                if all(preorder in orders_finish for preorder in preorders):
+                    order_free.add(order)
+
+        load_std = float(np.std(loads)) if loads.size else 0.0
+        finish_increment = max(0.0, float(np.max(loads)) - base_max_load) if loads.size else 0.0
+        penalties.append(load_std + 0.05 * finish_increment)
+
+    return _normalise_penalties(penalties)
 '''1.3定义三个类
 class Team：小组类
 class Singelstation：站位类，定义了每个站位的实际工作时间（此数据统计暂时未调通）
@@ -764,18 +835,26 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 step_idx = len(decision_trace)
                 current_order_candidates = get_available_orders(air)
                 current_order_mask = agents.policy.get_order_mask_numpy(current_order_candidates)
+                nowstation = allstation[station_id]
+                load_penalty_by_action = None
+                if getattr(conf, "gnn_use_load_penalty", False):
+                    load_penalty_by_action = estimate_action_load_penalty(
+                        nowstation, air, current_order_candidates
+                    )
 
                 # print("当前的obs为", obs)
                 # print("当前的state为", state)
                 for agent_id in range(n_agents):
                     avail_action = action_set
                     decision_context = None
-                    if getattr(conf, "record_gnn_diagnostics", False):
+                    if getattr(conf, "record_gnn_diagnostics", False) or load_penalty_by_action is not None:
                         decision_context = {
                             "step": int(step_idx),
                             "station_id": int(station_id),
                             "episode_time": float(env.now),
                         }
+                        if load_penalty_by_action is not None:
+                            decision_context["load_penalty_by_action"] = load_penalty_by_action
                     action = agents.choose_action(state, last_action[agent_id], agent_id, avail_action,
                                                   epsilon, evaluate, order_candidates=current_order_candidates,
                                                   decision_context=decision_context)
@@ -941,6 +1020,25 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
         agent0_records = [item for item in trace_records if item.get("agent_id") == 0]
         gnn_trace_summary = None
         if agent0_records:
+            def mean_metric(key):
+                values = [item.get(key) for item in agent0_records if item.get(key) is not None]
+                return round(float(np.mean(values)), 6) if values else None
+
+            changed_records = [item for item in agent0_records if item.get("action_changed")]
+            fusion_mode = getattr(conf, "gnn_action_fusion_mode", "add_bias")
+            margin_threshold = float(getattr(conf, "gnn_margin_threshold", 0.5))
+            changed_only_when_margin_below_threshold = None
+            if fusion_mode == "margin_gated":
+                changed_only_when_margin_below_threshold = all(
+                    item.get("changed_action_q_gap") is not None
+                    and item.get("changed_action_q_gap") <= margin_threshold + 1e-8
+                    for item in changed_records
+                )
+            target_gain_flags = [
+                item.get("selected_successor_time_higher_than_original")
+                for item in changed_records
+                if item.get("selected_successor_time_higher_than_original") is not None
+            ]
             gnn_trace_summary = {
                 "total_decisions": len(agent0_records),
                 "q_changed_count": int(sum(item.get("q_changed", 0) for item in agent0_records)),
@@ -958,6 +1056,29 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 "mean_q_delta_to_margin": round(
                     float(np.mean([item.get("q_delta_to_margin", 0.0) for item in agent0_records])), 6
                 ),
+                "candidate_bias_std": mean_metric("candidate_bias_std"),
+                "candidate_target_std": mean_metric("candidate_target_std"),
+                "candidate_target_bias_corr": mean_metric("candidate_target_bias_corr"),
+                "candidate_pairwise_acc": mean_metric("candidate_pairwise_acc"),
+                "mean_agent0_q_margin": mean_metric("q_margin_zero"),
+                "mean_scaled_bias_abs": mean_metric("max_abs_bias"),
+                "mean_scaled_bias_to_margin": mean_metric("q_delta_to_margin"),
+                "rerank_candidate_size_mean": mean_metric("rerank_candidate_size"),
+                "rerank_candidate_size_per_decision": [
+                    item.get("rerank_candidate_size") for item in agent0_records
+                ],
+                "changed_only_when_margin_below_threshold": changed_only_when_margin_below_threshold,
+                "changed_action_q_gap_mean": mean_metric("changed_action_q_gap"),
+                "changed_action_bias_gain_mean": mean_metric("changed_action_bias_gain"),
+                "changed_action_target_gain_mean": mean_metric("changed_action_target_gain"),
+                "changed_action_load_penalty_gain_mean": mean_metric(
+                    "changed_action_load_penalty_gain"
+                ),
+                "selected_successor_time_higher_than_original_rate": round(
+                    float(np.mean(target_gain_flags)), 6
+                )
+                if target_gain_flags
+                else None,
             }
         if trace_decisions and gnn_trace_summary is not None:
             builtins.print("\n===== ACTION_GNN_TRACE_DECISIONS summary =====")
@@ -976,12 +1097,30 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                     "zero_action": item.get("zero_action"),
                     "normal_action": item.get("normal_action"),
                     "executed_action": item.get("executed_action"),
+                    "fusion_mode": item.get("fusion_mode"),
+                    "rerank_candidate_size": item.get("rerank_candidate_size"),
+                    "rerank_candidate_actions": item.get("rerank_candidate_actions"),
                     "q_margin_zero": round(float(item.get("q_margin_zero", 0.0)), 6),
                     "max_abs_bias": round(float(item.get("max_abs_bias", 0.0)), 6),
                     "q_delta_to_margin": round(float(item.get("q_delta_to_margin", 0.0)), 6),
+                    "changed_action_q_gap": item.get("changed_action_q_gap"),
+                    "changed_action_bias_gain": item.get("changed_action_bias_gain"),
+                    "changed_action_target_gain": item.get("changed_action_target_gain"),
+                    "changed_action_load_penalty_gain": item.get(
+                        "changed_action_load_penalty_gain"
+                    ),
+                    "selected_successor_time_higher_than_original": item.get(
+                        "selected_successor_time_higher_than_original"
+                    ),
                     "rule_node_ids": item.get("rule_node_ids"),
+                    "action_target_values": item.get("action_target_values"),
+                    "load_penalty_values": item.get("load_penalty_values"),
                     "selected_rule_node_id": item.get("selected_rule_node_id"),
                     "valid_order_count": item.get("valid_order_count"),
+                    "candidate_bias_std": item.get("candidate_bias_std"),
+                    "candidate_target_std": item.get("candidate_target_std"),
+                    "candidate_target_bias_corr": item.get("candidate_target_bias_corr"),
+                    "candidate_pairwise_acc": item.get("candidate_pairwise_acc"),
                     "planned_order_ids": item.get("planned_order_ids"),
                     "finished_order_ids": item.get("finished_order_ids"),
                 })

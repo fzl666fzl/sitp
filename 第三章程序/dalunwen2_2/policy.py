@@ -1,6 +1,8 @@
 import os
 import re
+import numpy as np
 import torch
+import torch.nn.functional as F
 from graph_utils import build_procedure_graph
 from NN import DRQN, QMIXNET, ProcedureGraphEncoder, QattenMixer
 from parameter import args_parser
@@ -28,6 +30,7 @@ class QMIX:
         self.obs_shape = self.conf.obs_shape
         self.mixer = self.conf.mixer.lower()
         self.use_gnn = bool(getattr(self.conf, "use_gnn", False))
+        self.use_gnn_graph_embedding = bool(getattr(self.conf, "use_gnn_graph_embedding", self.use_gnn))
         self.use_gnn_action_bias = bool(getattr(self.conf, "use_gnn_action_bias", False))
         input_shape = self.obs_shape
 
@@ -35,17 +38,19 @@ class QMIX:
             input_shape += self.n_actions
         if self.conf.reuse_network:
             input_shape += self.n_agents
-        if self.use_gnn:
+        if self.use_gnn and self.use_gnn_graph_embedding:
             input_shape += self.conf.gnn_embed_dim
 
         self.eval_graph_encoder = None
         self.target_graph_encoder = None
         self.pro_id_to_idx = {}
+        self.idx_to_pro_id = {}
         self.rule_features = None
         self.gnn_action_weights = None
         if self.use_gnn:
             adjacency, node_features, pro_ids, rule_features = build_procedure_graph(args_parser())
             self.pro_id_to_idx = {pro_id: idx for idx, pro_id in enumerate(pro_ids)}
+            self.idx_to_pro_id = {idx: pro_id for pro_id, idx in self.pro_id_to_idx.items()}
             self.rule_features = rule_features.to(self.device)
             self.gnn_action_weights = torch.tensor(GNN_ACTION_WEIGHTS, dtype=torch.float32, device=self.device)
             self.eval_graph_encoder = ProcedureGraphEncoder(adjacency, node_features, self.conf).to(self.device)
@@ -86,7 +91,11 @@ class QMIX:
 
     def _model_roots(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        configured_root = os.path.abspath(os.path.join(self.conf.model_dir, self.conf.map_name))
+        configured_base = os.path.abspath(self.conf.model_dir)
+        if os.path.basename(configured_base) == self.conf.map_name:
+            configured_root = configured_base
+        else:
+            configured_root = os.path.abspath(os.path.join(configured_base, self.conf.map_name))
         default_root = os.path.abspath(os.path.join(base_dir, "models", self.conf.map_name))
         roots = [
             configured_root,
@@ -231,6 +240,9 @@ class QMIX:
         td_error = q_total_eval - targets.detach()
         mask_td_error = mask * td_error
         loss = (mask_td_error ** 2).sum() / mask.sum()
+        aux_loss = self._candidate_aux_ranking_loss(batch, max_episode_len)
+        if aux_loss is not None:
+            loss = loss + float(getattr(self.conf, "gnn_aux_weight", 0.0)) * aux_loss
 
         print("*******开始训练({})*********".format(self.mixer), loss)
 
@@ -269,7 +281,7 @@ class QMIX:
         return q_evals, q_targets
 
     def get_eval_graph_embedding_numpy(self, force_zero=None):
-        if not self.use_gnn:
+        if not (self.use_gnn and self.use_gnn_graph_embedding):
             return None
         zero_graph = getattr(self.conf, "zero_gnn_embedding", False) if force_zero is None else force_zero
         if zero_graph:
@@ -288,7 +300,7 @@ class QMIX:
                 mask[idx] = 1.0
         return mask.numpy()
 
-    def get_eval_action_bias(self, order_candidates, agent_num, force_zero=None):
+    def get_eval_action_bias(self, order_candidates, agent_num, force_zero=None, weight_override=None):
         if not (self.use_gnn and self.use_gnn_action_bias) or agent_num != 0:
             return None
         zero_bias = getattr(self.conf, "zero_gnn_embedding", False) if force_zero is None else force_zero
@@ -299,36 +311,148 @@ class QMIX:
             dtype=torch.float32,
             device=self.device,
         ).view(1, 1, -1)
-        return self._action_bias_from_mask(order_mask, self.eval_graph_encoder)[0, 0, agent_num]
+        return self._action_bias_from_mask(
+            order_mask, self.eval_graph_encoder, weight_override=weight_override
+        )[0, 0, agent_num]
 
     def get_rule_node_ids(self, order_candidates):
-        rule_node_ids = [-1] * self.n_actions
-        if not (self.use_gnn and order_candidates and self.rule_features is not None):
-            return rule_node_ids
-        candidate_pairs = []
-        for order_id in order_candidates:
-            idx = self.pro_id_to_idx.get(int(order_id))
-            if idx is not None:
-                candidate_pairs.append((int(order_id), idx))
-        if not candidate_pairs:
-            return rule_node_ids
-        candidate_indices = torch.tensor(
-            [idx for _, idx in candidate_pairs], dtype=torch.long, device=self.device
-        )
-        rule_priority = torch.matmul(
-            self.rule_features[candidate_indices], self.gnn_action_weights.t()
-        )
-        best_candidate_indices = torch.argmax(rule_priority, dim=0).detach().cpu().tolist()
-        for action_idx, candidate_pos in enumerate(best_candidate_indices):
-            rule_node_ids[action_idx] = candidate_pairs[candidate_pos][0]
+        if not (self.use_gnn and order_candidates):
+            return [-1] * self.n_actions
+        order_mask = torch.tensor(
+            self.get_order_mask_numpy(order_candidates),
+            dtype=torch.float32,
+            device=self.device,
+        ).view(1, 1, -1)
+        selected_indices, valid_mask = self._candidate_rule_indices(order_mask)
+        rule_node_ids = []
+        for action_idx in range(self.n_actions):
+            if not bool(valid_mask[0, 0, action_idx].item()):
+                rule_node_ids.append(-1)
+                continue
+            node_idx = int(selected_indices[0, 0, action_idx].item())
+            rule_node_ids.append(int(self.idx_to_pro_id.get(node_idx, -1)))
         return rule_node_ids
+
+    def get_candidate_action_stats(self, order_candidates, action_bias=None):
+        defaults = {
+            "candidate_bias_std": None,
+            "candidate_target_std": None,
+            "candidate_target_bias_corr": None,
+            "candidate_pairwise_acc": None,
+        }
+        if not (self.use_gnn and self.use_gnn_action_bias and order_candidates):
+            return defaults
+
+        rule_node_ids = self.get_rule_node_ids(order_candidates)
+        valid_positions = [idx for idx, node_id in enumerate(rule_node_ids) if node_id != -1]
+        if len(valid_positions) < 2:
+            return defaults
+
+        node_indices = torch.tensor(
+            [self.pro_id_to_idx[rule_node_ids[idx]] for idx in valid_positions],
+            dtype=torch.long,
+            device=self.device,
+        )
+        targets = self._node_targets()[node_indices].detach().cpu().numpy()
+        if action_bias is None:
+            values = self.eval_graph_encoder.node_scores()[node_indices].detach().cpu().numpy()
+        else:
+            values = action_bias.detach().cpu().numpy()[valid_positions]
+
+        bias_std = float(np.std(values))
+        target_std = float(np.std(targets))
+        corr = None
+        if bias_std > 1e-8 and target_std > 1e-8:
+            corr = float(np.corrcoef(targets, values)[0, 1])
+
+        pair_total = 0
+        pair_correct = 0
+        for i in range(len(valid_positions)):
+            for j in range(len(valid_positions)):
+                if targets[i] <= targets[j]:
+                    continue
+                pair_total += 1
+                pair_correct += int(values[i] > values[j])
+
+        return {
+            "candidate_bias_std": bias_std,
+            "candidate_target_std": target_std,
+            "candidate_target_bias_corr": corr,
+            "candidate_pairwise_acc": round(pair_correct / pair_total, 6) if pair_total else None,
+        }
+
+    def get_rule_target_values(self, rule_node_ids):
+        if not (self.use_gnn and self.rule_features is not None):
+            return [None] * self.n_actions
+        targets = self._node_targets().detach()
+        values = []
+        for node_id in rule_node_ids:
+            node_idx = self.pro_id_to_idx.get(int(node_id)) if node_id != -1 else None
+            if node_idx is None:
+                values.append(None)
+            else:
+                values.append(float(targets[node_idx].item()))
+        return values
+
+    def _node_targets(self):
+        target_type = getattr(self.conf, "gnn_aux_target_type", "successor_time")
+        target_columns = {
+            "successor_count": 0,
+            "successor_time": 1,
+            "critical_path": 2,
+        }
+        column_idx = target_columns.get(target_type, 1)
+        return self.rule_features[:, column_idx]
+
+    def _candidate_rule_indices(self, order_mask):
+        batch_size, episode_len, _ = order_mask.shape
+        has_candidate = order_mask.sum(dim=-1) > 0
+        rule_priority = torch.matmul(self.rule_features, self.gnn_action_weights.t())
+        masked_priority = rule_priority.view(1, 1, -1, self.n_actions).expand(
+            batch_size, episode_len, -1, -1
+        )
+        masked_priority = masked_priority.masked_fill(order_mask.unsqueeze(-1) <= 0, -float("inf"))
+        selected_indices = torch.argmax(masked_priority, dim=2)
+        valid_mask = has_candidate.unsqueeze(-1).expand(batch_size, episode_len, self.n_actions)
+        selected_indices = selected_indices.masked_fill(~valid_mask, 0)
+        return selected_indices, valid_mask
+
+    def _candidate_aux_ranking_loss(self, batch, max_episode_len):
+        if not (
+            self.use_gnn
+            and self.use_gnn_action_bias
+            and getattr(self.conf, "gnn_aux_weight", 0.0) > 0
+            and getattr(self.conf, "gnn_aux_loss_type", "pairwise_rank") == "pairwise_rank"
+            and "order_mask" in batch
+        ):
+            return None
+
+        order_mask = batch["order_mask"][:, :max_episode_len].to(self.device)
+        step_mask = (1 - batch["padded"][:, :max_episode_len].float()).to(self.device).squeeze(-1) > 0
+        selected_indices, valid_mask = self._candidate_rule_indices(order_mask)
+        node_scores = self.eval_graph_encoder.node_scores()
+        selected_scores = node_scores[selected_indices]
+        selected_targets = self._node_targets()[selected_indices]
+
+        valid_mask = valid_mask & step_mask.unsqueeze(-1)
+        pair_mask = (
+            valid_mask.unsqueeze(-1)
+            & valid_mask.unsqueeze(-2)
+            & (selected_targets.unsqueeze(-1) > selected_targets.unsqueeze(-2) + 1e-6)
+        )
+        if not bool(pair_mask.any().item()):
+            return torch.zeros((), dtype=torch.float32, device=self.device)
+
+        score_diff = selected_scores.unsqueeze(-1) - selected_scores.unsqueeze(-2)
+        pair_losses = F.softplus(-score_diff)
+        return pair_losses[pair_mask].mean()
 
     def _add_action_bias(self, q_values, batch, mask_key, encoder):
         if not (self.use_gnn and self.use_gnn_action_bias) or mask_key not in batch:
             return q_values
         return q_values + self._action_bias_from_mask(batch[mask_key].to(self.device), encoder)
 
-    def _action_bias_from_mask(self, order_mask, encoder):
+    def _action_bias_from_mask(self, order_mask, encoder, weight_override=None):
         batch_size, episode_len, _ = order_mask.shape
         bias = torch.zeros(
             batch_size,
@@ -342,19 +466,29 @@ class QMIX:
             return bias
 
         node_scores = encoder.node_scores()
-        rule_priority = torch.matmul(self.rule_features, self.gnn_action_weights.t())
-        weighted_priority = node_scores.unsqueeze(1) * rule_priority
-        denom = order_mask.sum(dim=-1, keepdim=True).clamp_min(1.0)
-        action_bias = torch.matmul(order_mask, weighted_priority) / denom
-        action_bias = action_bias - action_bias.mean(dim=-1, keepdim=True)
-        action_bias_std = action_bias.std(dim=-1, keepdim=True, unbiased=False).clamp_min(1e-6)
-        action_bias = action_bias / action_bias_std
-        action_bias = action_bias * getattr(self.conf, "gnn_action_bias_weight", 0.5)
+        selected_indices, valid_mask = self._candidate_rule_indices(order_mask)
+        action_bias = node_scores[selected_indices].masked_fill(~valid_mask, 0.0)
+        if getattr(self.conf, "gnn_bias_norm_scope", "candidate") == "candidate":
+            denom = valid_mask.sum(dim=-1, keepdim=True).clamp_min(1)
+            mean = action_bias.sum(dim=-1, keepdim=True) / denom
+            centered = (action_bias - mean).masked_fill(~valid_mask, 0.0)
+            var = (centered ** 2).sum(dim=-1, keepdim=True) / denom
+            action_bias = centered / torch.sqrt(var + 1e-6)
+        clip_value = float(getattr(self.conf, "gnn_bias_clip", 1.0))
+        if clip_value > 0:
+            action_bias = torch.clamp(action_bias, -clip_value, clip_value)
+        weight = (
+            float(weight_override)
+            if weight_override is not None
+            else float(getattr(self.conf, "gnn_action_bias_weight", 0.5))
+        )
+        action_bias = action_bias * weight
+        action_bias = action_bias.masked_fill(~valid_mask, 0.0)
         bias[:, :, 0, :] = action_bias
         return bias
 
     def _graph_embedding_for_batch(self, encoder, episode_num, device):
-        if not self.use_gnn:
+        if not (self.use_gnn and self.use_gnn_graph_embedding):
             return None
         graph_embedding = encoder().to(device)
         return graph_embedding.view(1, 1, -1).expand(episode_num, self.n_agents, -1)
@@ -381,7 +515,7 @@ class QMIX:
             inputs.append(agent_ids)
             inputs_.append(agent_ids)
 
-        if self.use_gnn:
+        if self.use_gnn and self.use_gnn_graph_embedding:
             inputs.append(self._graph_embedding_for_batch(self.eval_graph_encoder, episode_num, o.device))
             inputs_.append(self._graph_embedding_for_batch(self.target_graph_encoder, episode_num, o_.device))
 
