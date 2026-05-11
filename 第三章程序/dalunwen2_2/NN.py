@@ -47,6 +47,23 @@ class ProcedureGraphEncoder(nn.Module):
         return self.node_embeddings().mean(dim=0)
 
 
+class StationTimePredictor(nn.Module):
+    def __init__(self, input_shape, conf):
+        super(StationTimePredictor, self).__init__()
+        hidden_dim = getattr(conf, "si_predict_hidden_dim", 64)
+        output_dim = getattr(conf, "si_predict_output_dim", 4)
+        self.net = nn.Sequential(
+            nn.Linear(input_shape, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim),
+        )
+
+    def forward(self, x):
+        return F.softplus(self.net(x))
+
+
 class QMIXNET(nn.Module):
     def __init__(self, conf):
         super(QMIXNET, self).__init__()

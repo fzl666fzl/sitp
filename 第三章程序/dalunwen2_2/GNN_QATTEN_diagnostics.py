@@ -119,7 +119,9 @@ def summarize_records(records):
             "changed_action_bias_gain_mean": None,
             "changed_action_target_gain_mean": None,
             "changed_action_load_penalty_gain_mean": None,
+            "changed_action_pred_si_gain_mean": None,
             "selected_successor_time_higher_than_original_rate": None,
+            "selected_pred_si_lower_than_original_rate": None,
         }
 
     agent0_records = [item for item in records if item.get("agent_id") == 0]
@@ -140,6 +142,11 @@ def summarize_records(records):
         item.get("selected_successor_time_higher_than_original")
         for item in changed_records
         if item.get("selected_successor_time_higher_than_original") is not None
+    ]
+    pred_si_gain_flags = [
+        item.get("selected_pred_si_lower_than_original")
+        for item in changed_records
+        if item.get("selected_pred_si_lower_than_original") is not None
     ]
     deltas = [item.get("mean_abs_q_delta", 0.0) for item in records]
     changes = [item.get("action_changed", 0) for item in records]
@@ -188,10 +195,18 @@ def summarize_records(records):
         "changed_action_load_penalty_gain_mean": mean_metric(
             "changed_action_load_penalty_gain"
         ),
+        "changed_action_pred_si_gain_mean": mean_metric(
+            "changed_action_pred_si_gain"
+        ),
         "selected_successor_time_higher_than_original_rate": round(
             float(np.mean(target_gain_flags)), 6
         )
         if target_gain_flags
+        else None,
+        "selected_pred_si_lower_than_original_rate": round(
+            float(np.mean(pred_si_gain_flags)), 6
+        )
+        if pred_si_gain_flags
         else None,
     }
 
@@ -302,6 +317,11 @@ def changed_decision_details(records, limit=3):
             "bias_gain": item.get("changed_action_bias_gain"),
             "target_gain": item.get("changed_action_target_gain"),
             "load_penalty_gain": item.get("changed_action_load_penalty_gain"),
+            "pred_si_gain": item.get("changed_action_pred_si_gain"),
+            "selected_pred_si_lower_than_original": item.get(
+                "selected_pred_si_lower_than_original"
+            ),
+            "predicted_si_by_action": item.get("predicted_si_by_action"),
             "load_penalty_values": item.get("load_penalty_values"),
             "successor_time_higher": item.get("selected_successor_time_higher_than_original"),
         })

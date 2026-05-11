@@ -87,6 +87,129 @@ def get_available_orders(air):
         if is_free:
             order_candidates.append(ppp)
     return order_candidates
+
+
+def _order_list(value):
+    if value in (None, 0):
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return [value]
+
+
+def _normalise_values(values):
+    result = np.asarray(values, dtype=np.float32)
+    finite_mask = np.isfinite(result)
+    if not finite_mask.any():
+        return [0.0 for _ in values]
+    finite_values = result[finite_mask]
+    min_value = float(np.min(finite_values))
+    max_value = float(np.max(finite_values))
+    if max_value - min_value <= 1e-8:
+        result[finite_mask] = 0.0
+    else:
+        result[finite_mask] = (finite_values - min_value) / (max_value - min_value)
+    result[~finite_mask] = 0.0
+    return [float(item) for item in result.tolist()]
+
+
+def estimate_action_si_targets(nowstation, air, order_candidates):
+    if not order_candidates:
+        return [0.0 for _ in action_set]
+
+    scores = []
+    base_loads = np.asarray(
+        [nowstation.teams[i].time_past1 for i in range(team_num)],
+        dtype=np.float32,
+    )
+    base_max_load = float(np.max(base_loads)) if base_loads.size else 0.0
+
+    for proc_action_idx in range(len(action_set)):
+        order_free = set(order_candidates)
+        orders_finish = set(air.order_finish)
+        loads = base_loads.copy()
+        team_free = set(range(team_num))
+        safety_count = 0
+
+        while order_free and team_free and safety_count < pro_num:
+            safety_count += 1
+            thisorder = nowstation.cal_pri(order_free, proc_action_idx)
+            if thisorder not in order_free:
+                break
+            team_id = min(team_free, key=lambda item: loads[item])
+            time_w = (team_id - 1) / 10 + 1
+            duration = float(dict_time[thisorder]) * time_w
+            if nowstation.id < station_num - 1 and loads[team_id] + duration > nowstation.pulse:
+                team_free.remove(team_id)
+                continue
+
+            loads[team_id] += duration
+            order_free.remove(thisorder)
+            orders_finish.add(thisorder)
+            for order in _order_list(dict_postorder[thisorder]):
+                if order in orders_finish:
+                    continue
+                preorders = _order_list(dict_preorder[order])
+                if all(preorder in orders_finish for preorder in preorders):
+                    order_free.add(order)
+
+        load_std = float(np.std(loads)) if loads.size else 0.0
+        finish_increment = max(0.0, float(np.max(loads)) - base_max_load) if loads.size else 0.0
+        scores.append(-(load_std + 0.05 * finish_increment))
+
+    return _normalise_values(scores)
+
+
+def estimate_action_load_penalty(nowstation, air, order_candidates):
+    return [1.0 - score for score in estimate_action_si_targets(nowstation, air, order_candidates)]
+
+
+SI_PREDICT_FEATURE_DIM = 15
+
+
+def build_si_predict_features(allstation, nowstation, air, selected_proc_action, action_load_scores, thispulse):
+    scale = max(float(thispulse), 1.0)
+    station_loads = []
+    for station in allstation:
+        station_load = 0.0
+        for team in station.teams:
+            station_load = max(station_load, float(team.finishtime), float(team.time_past1))
+        station_loads.append(station_load / scale)
+    while len(station_loads) < station_num:
+        station_loads.append(0.0)
+
+    team_loads = [float(team.time_past1) / scale for team in nowstation.teams]
+    while len(team_loads) < team_num:
+        team_loads.append(0.0)
+
+    raw_team_loads = np.asarray([float(team.time_past1) for team in nowstation.teams], dtype=np.float32)
+    avg_team_load = float(np.mean(raw_team_loads)) / scale if raw_team_loads.size else 0.0
+    max_team_load = float(np.max(raw_team_loads)) / scale if raw_team_loads.size else 0.0
+    std_team_load = float(np.std(raw_team_loads)) / scale if raw_team_loads.size else 0.0
+    total_work = max(sum(float(dict_time[order]) for order in pro_id), 1.0)
+    remaining_work = sum(float(dict_time[order]) for order in air.order_left) / total_work
+    action_idx = int(selected_proc_action) if selected_proc_action is not None else 0
+    selected_load_score = 0.0
+    if action_load_scores and 0 <= action_idx < len(action_load_scores):
+        selected_load_score = float(action_load_scores[action_idx])
+
+    features = (
+        station_loads[:station_num]
+        + team_loads[:team_num]
+        + [
+            avg_team_load,
+            max_team_load,
+            std_team_load,
+            remaining_work,
+            len(get_available_orders(air)) / max(float(pro_num), 1.0),
+            len(air.order_finish) / max(float(pro_num), 1.0),
+            selected_load_score,
+            nowstation.id / max(float(station_num - 1), 1.0),
+        ]
+    )
+    if len(features) < SI_PREDICT_FEATURE_DIM:
+        features.extend([0.0] * (SI_PREDICT_FEATURE_DIM - len(features)))
+    return [float(item) for item in features[:SI_PREDICT_FEATURE_DIM]]
 '''1.3定义三个类
 class Team：小组类
 class Singelstation：站位类，定义了每个站位的实际工作时间（此数据统计暂时未调通）
@@ -669,6 +792,43 @@ def get_pulse(allstation):
     return pulse_real,si
 
 
+def get_station_times(allstation):
+    station_times = []
+    for i in range(station_num):
+        time_tmp_station = 0
+        for j in range(team_num):
+            time_tmp_station = max(time_tmp_station, allstation[i].teams[j].finishtime)
+        station_times.append(float(time_tmp_station))
+    return station_times
+
+
+def get_final_reward(conf, this_pulse, smoothness_raw):
+    smoothness = math.sqrt(smoothness_raw)
+    smoothness_target = getattr(conf, "smoothness_reward_target", 30.0)
+    reward_mode = getattr(conf, "final_reward_mode", "pulse_smooth")
+
+    if reward_mode == "si_only_norm":
+        return (smoothness_target - smoothness) / smoothness_target
+    if reward_mode == "si_only_raw":
+        return -smoothness / smoothness_target
+
+    if getattr(conf, "continuous_final_reward", False):
+        pulse_target = getattr(conf, "pulse_reward_target", 600.0)
+        pulse_scale = getattr(conf, "pulse_reward_scale", 80.0)
+        smoothness_weight = getattr(conf, "smoothness_reward_weight", 0.0)
+        pulse_score = (pulse_target - this_pulse) / pulse_scale
+        smoothness_score = (smoothness_target - smoothness) / smoothness_target
+        return pulse_score + smoothness_weight * smoothness_score
+
+    if this_pulse < 660:
+        return 1
+    if this_pulse < 680:
+        return 0.7
+    if this_pulse < 700:
+        return 0.5
+    return -1
+
+
 n_agents = 2
 
 n_actions = 9
@@ -699,12 +859,14 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
     env = simpy.Environment()
     o, u, r, s, o_, s_ = [], [], [], [], [], []
     au, avail_u_, u_onehot, terminate, padded = [], [], [], [], []
-    order_mask, order_mask_ = [], []
+    order_mask, order_mask_, order_si_target = [], [], []
+    si_predict_features = []
     step_rewards = []
 
     allstation, station_list, air = reset_env(env, thispulse)
     reset_station(env, allstation, station_list)
     episode = {}
+    result_holder = {"station_times": None, "si": None}
 
     def production(env, agents, air, allstation, station_list, evaluate, start_epsilon):
         now_state, done = get_states(env, air, allstation, thispulse)
@@ -718,6 +880,21 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
             actions, avail_actions, actions_onehot = [], [], []
             current_order_candidates = get_available_orders(air)
             current_order_mask = agents.policy.get_order_mask_numpy(current_order_candidates)
+            now_time = env.now
+            if now_time >= 0 and now_time < thispulse:
+                station_id = 0
+            elif now_time >= thispulse and now_time < 2 * thispulse:
+                station_id = 1
+            elif now_time >= 2 * thispulse and now_time < 3 * thispulse:
+                station_id = 2
+            else:
+                station_id = 3
+            current_si_target = estimate_action_si_targets(
+                allstation[station_id], air, current_order_candidates
+            )
+            current_load_penalty = estimate_action_load_penalty(
+                allstation[station_id], air, current_order_candidates
+            )
 
             for agent_id in range(n_agents):
                 avail_action = action_set
@@ -749,6 +926,14 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
                 station_id = 3
             print('此时的站位为：', station_id)
             nowstation = allstation[station_id]
+            current_si_predict_features = build_si_predict_features(
+                allstation,
+                nowstation,
+                air,
+                actions[0] if actions else 0,
+                current_load_penalty,
+                thispulse,
+            )
             nowstation.distribution(air, actions)
             if nowstation.id < 3:
                 yield env.timeout(thispulse)
@@ -770,6 +955,8 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
             s_.append(next_state)
             order_mask.append(current_order_mask)
             order_mask_.append(next_order_mask)
+            order_si_target.append(current_si_target)
+            si_predict_features.append(current_si_predict_features)
             au.append(avail_actions)
             terminate.append([done])
             padded.append([0.0])
@@ -778,6 +965,8 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
 
             if nowstation.id == station_num - 1:
                 this_pulse, times = get_pulse(allstation)
+                result_holder["station_times"] = get_station_times(allstation)
+                result_holder["si"] = math.sqrt(times)
                 pulses.append(this_pulse)
                 if this_pulse < 660:
                     SI.append(times)
@@ -785,24 +974,7 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
                 print(pr)
 
                 for _ in range(station_num):
-                    if getattr(conf, "continuous_final_reward", False):
-                        pulse_target = getattr(conf, "pulse_reward_target", 600.0)
-                        pulse_scale = getattr(conf, "pulse_reward_scale", 80.0)
-                        smoothness = math.sqrt(times)
-                        smoothness_weight = getattr(conf, "smoothness_reward_weight", 0.0)
-                        smoothness_target = getattr(conf, "smoothness_reward_target", 30.0)
-                        pulse_score = (pulse_target - this_pulse) / pulse_scale
-                        smoothness_score = (smoothness_target - smoothness) / smoothness_target
-                        tmp = pulse_score + smoothness_weight * smoothness_score
-                    else:
-                        if this_pulse < 660:
-                            tmp = 1
-                        elif this_pulse < 680:
-                            tmp = 0.7
-                        elif this_pulse < 700:
-                            tmp = 0.5
-                        else:
-                            tmp = -1
+                    tmp = get_final_reward(conf, this_pulse, times)
                     r.append([tmp])
 
                 yield env.timeout(thispulse + 2000)
@@ -835,6 +1007,15 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
     u_onehot = pad_or_trim(u_onehot, np.zeros((n_agents, n_actions)).tolist())
     order_mask = pad_or_trim(order_mask, np.zeros(conf.gnn_node_count).tolist())
     order_mask_ = pad_or_trim(order_mask_, np.zeros(conf.gnn_node_count).tolist())
+    order_si_target = pad_or_trim(order_si_target, np.zeros(n_actions).tolist())
+    si_predict_features = pad_or_trim(si_predict_features, np.zeros(SI_PREDICT_FEATURE_DIM).tolist())
+    final_station_times = result_holder["station_times"] or [0.0] * station_num
+    final_si = result_holder["si"] or 0.0
+    final_station_times_seq = pad_or_trim(
+        [list(final_station_times) for _ in range(transition_len)],
+        [0.0] * station_num,
+    )
+    final_si_seq = pad_or_trim([[final_si] for _ in range(transition_len)], [0.0])
     padded = pad_or_trim(padded, [1.0])
     terminate = pad_or_trim(terminate, [1.0])
 
@@ -849,6 +1030,10 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
     episode['u_onehot'] = u_onehot.copy()
     episode['order_mask'] = order_mask.copy()
     episode['order_mask_'] = order_mask_.copy()
+    episode['order_si_target'] = order_si_target.copy()
+    episode['si_predict_features'] = si_predict_features.copy()
+    episode['final_station_times'] = final_station_times_seq.copy()
+    episode['final_si'] = final_si_seq.copy()
     episode['padded'] = padded.copy()
     episode['terminated'] = terminate.copy()
     return episode

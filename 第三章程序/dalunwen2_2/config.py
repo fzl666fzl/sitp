@@ -23,6 +23,7 @@ class Config:
         self.grad_norm_clip = 10  # prevent gradient explosion
         self.update_target_params = 100  # 200
         self.continuous_final_reward = True
+        self.final_reward_mode = "pulse_smooth"
         self.pulse_reward_target = 600.0
         self.pulse_reward_scale = 80.0
         self.smoothness_reward_weight = 1.5

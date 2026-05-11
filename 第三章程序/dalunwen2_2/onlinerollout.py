@@ -167,6 +167,68 @@ def estimate_action_load_penalty(nowstation, air, order_candidates):
         penalties.append(load_std + 0.05 * finish_increment)
 
     return _normalise_penalties(penalties)
+
+
+SI_PREDICT_FEATURE_DIM = 15
+
+
+def build_si_predict_features(allstation, nowstation, air, selected_proc_action, action_load_scores, thispulse):
+    scale = max(float(thispulse), 1.0)
+    station_loads = []
+    for station in allstation:
+        station_load = 0.0
+        for team in station.teams:
+            station_load = max(station_load, float(team.finishtime), float(team.time_past1))
+        station_loads.append(station_load / scale)
+    while len(station_loads) < station_num:
+        station_loads.append(0.0)
+
+    team_loads = [float(team.time_past1) / scale for team in nowstation.teams]
+    while len(team_loads) < team_num:
+        team_loads.append(0.0)
+
+    raw_team_loads = np.asarray([float(team.time_past1) for team in nowstation.teams], dtype=np.float32)
+    avg_team_load = float(np.mean(raw_team_loads)) / scale if raw_team_loads.size else 0.0
+    max_team_load = float(np.max(raw_team_loads)) / scale if raw_team_loads.size else 0.0
+    std_team_load = float(np.std(raw_team_loads)) / scale if raw_team_loads.size else 0.0
+    total_work = max(sum(float(dict_time[order]) for order in pro_id), 1.0)
+    remaining_work = sum(float(dict_time[order]) for order in air.order_left) / total_work
+    action_idx = int(selected_proc_action) if selected_proc_action is not None else 0
+    selected_load_score = 0.0
+    if action_load_scores and 0 <= action_idx < len(action_load_scores):
+        selected_load_score = float(action_load_scores[action_idx])
+
+    features = (
+        station_loads[:station_num]
+        + team_loads[:team_num]
+        + [
+            avg_team_load,
+            max_team_load,
+            std_team_load,
+            remaining_work,
+            len(get_available_orders(air)) / max(float(pro_num), 1.0),
+            len(air.order_finish) / max(float(pro_num), 1.0),
+            selected_load_score,
+            nowstation.id / max(float(station_num - 1), 1.0),
+        ]
+    )
+    if len(features) < SI_PREDICT_FEATURE_DIM:
+        features.extend([0.0] * (SI_PREDICT_FEATURE_DIM - len(features)))
+    return [float(item) for item in features[:SI_PREDICT_FEATURE_DIM]]
+
+
+def build_si_predict_features_by_action(allstation, nowstation, air, action_load_scores, thispulse):
+    return [
+        build_si_predict_features(
+            allstation,
+            nowstation,
+            air,
+            action_idx,
+            action_load_scores,
+            thispulse,
+        )
+        for action_idx in range(len(action_set))
+    ]
 '''1.3定义三个类
 class Team：小组类
 class Singelstation：站位类，定义了每个站位的实际工作时间（此数据统计暂时未调通）
@@ -785,6 +847,8 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
         o, u, r, s, o_,s_ = [], [], [], [], [], []
         au, avail_u_, u_onehot, terminate, padded = [], [], [], [], []
         order_mask, order_mask_ = [], []
+        si_predict_features = []
+        final_station_times, final_si = [], []
 
         allstation, station_list, air = reset_env(env,thispulse)
         reset_station(env, allstation, station_list)
@@ -841,13 +905,35 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                     load_penalty_by_action = estimate_action_load_penalty(
                         nowstation, air, current_order_candidates
                     )
+                si_predict_load_scores = load_penalty_by_action
+                if getattr(conf, "use_si_predict_load_features", False) and si_predict_load_scores is None:
+                    si_predict_load_scores = estimate_action_load_penalty(
+                        nowstation, air, current_order_candidates
+                    )
+                si_predict_features_by_action = None
+                if getattr(conf, "use_si_predict_rerank", False):
+                    if si_predict_load_scores is None:
+                        si_predict_load_scores = estimate_action_load_penalty(
+                            nowstation, air, current_order_candidates
+                        )
+                    si_predict_features_by_action = build_si_predict_features_by_action(
+                        allstation,
+                        nowstation,
+                        air,
+                        si_predict_load_scores,
+                        thispulse,
+                    )
 
                 # print("当前的obs为", obs)
                 # print("当前的state为", state)
                 for agent_id in range(n_agents):
                     avail_action = action_set
                     decision_context = None
-                    if getattr(conf, "record_gnn_diagnostics", False) or load_penalty_by_action is not None:
+                    if (
+                        getattr(conf, "record_gnn_diagnostics", False)
+                        or load_penalty_by_action is not None
+                        or si_predict_features_by_action is not None
+                    ):
                         decision_context = {
                             "step": int(step_idx),
                             "station_id": int(station_id),
@@ -855,6 +941,8 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                         }
                         if load_penalty_by_action is not None:
                             decision_context["load_penalty_by_action"] = load_penalty_by_action
+                        if si_predict_features_by_action is not None:
+                            decision_context["si_predict_features_by_action"] = si_predict_features_by_action
                     action = agents.choose_action(state, last_action[agent_id], agent_id, avail_action,
                                                   epsilon, evaluate, order_candidates=current_order_candidates,
                                                   decision_context=decision_context)
@@ -885,6 +973,14 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 }
                 decision_trace.append(decision_item)
                 nowstation = allstation[station_id]
+                current_si_predict_features = build_si_predict_features(
+                    allstation,
+                    nowstation,
+                    air,
+                    actions[0] if actions else 0,
+                    si_predict_load_scores,
+                    thispulse,
+                )
                 before_finished_orders = set(air.order_finish)
                 nowstation.distribution(air, actions)
                 planned_order_ids = sorted(
@@ -926,6 +1022,7 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 s_.append(next_state)
                 order_mask.append(current_order_mask)
                 order_mask_.append(next_order_mask)
+                si_predict_features.append(current_si_predict_features)
                 au.append(avail_actions)
                 terminate.append([done])
                 padded.append([0.])
@@ -1012,10 +1109,17 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
         episode['u_onehot'] = u_onehot.copy()
         episode['order_mask'] = order_mask.copy()
         episode['order_mask_'] = order_mask_.copy()
+        episode['si_predict_features'] = si_predict_features.copy()
         episode['padded'] = padded.copy()
         episode['terminated'] = terminate.copy()
         final_pulse = result_holder["pulse"]
         smoothness_raw = result_holder["times"]
+        station_times = get_station_times(allstation)
+        si_value = math.sqrt(smoothness_raw) if isinstance(smoothness_raw, (int, float, np.floating)) else 0.0
+        final_station_times = [station_times for _ in range(len(o))]
+        final_si = [[si_value] for _ in range(len(o))]
+        episode['final_station_times'] = final_station_times.copy()
+        episode['final_si'] = final_si.copy()
         trace_records = getattr(conf, "gnn_diagnostic_records", None) or []
         agent0_records = [item for item in trace_records if item.get("agent_id") == 0]
         gnn_trace_summary = None
@@ -1074,10 +1178,27 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 "changed_action_load_penalty_gain_mean": mean_metric(
                     "changed_action_load_penalty_gain"
                 ),
+                "changed_action_pred_si_gain_mean": mean_metric(
+                    "changed_action_pred_si_gain"
+                ),
                 "selected_successor_time_higher_than_original_rate": round(
                     float(np.mean(target_gain_flags)), 6
                 )
                 if target_gain_flags
+                else None,
+                "selected_pred_si_lower_than_original_rate": round(
+                    float(np.mean([
+                        item.get("selected_pred_si_lower_than_original")
+                        for item in changed_records
+                        if item.get("selected_pred_si_lower_than_original") is not None
+                    ])),
+                    6,
+                )
+                if [
+                    item.get("selected_pred_si_lower_than_original")
+                    for item in changed_records
+                    if item.get("selected_pred_si_lower_than_original") is not None
+                ]
                 else None,
             }
         if trace_decisions and gnn_trace_summary is not None:
@@ -1109,12 +1230,20 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                     "changed_action_load_penalty_gain": item.get(
                         "changed_action_load_penalty_gain"
                     ),
+                    "changed_action_pred_si_gain": item.get(
+                        "changed_action_pred_si_gain"
+                    ),
+                    "selected_pred_si_lower_than_original": item.get(
+                        "selected_pred_si_lower_than_original"
+                    ),
                     "selected_successor_time_higher_than_original": item.get(
                         "selected_successor_time_higher_than_original"
                     ),
                     "rule_node_ids": item.get("rule_node_ids"),
                     "action_target_values": item.get("action_target_values"),
                     "load_penalty_values": item.get("load_penalty_values"),
+                    "predicted_si_by_action": item.get("predicted_si_by_action"),
+                    "si_penalty_by_action": item.get("si_penalty_by_action"),
                     "selected_rule_node_id": item.get("selected_rule_node_id"),
                     "valid_order_count": item.get("valid_order_count"),
                     "candidate_bias_std": item.get("candidate_bias_std"),

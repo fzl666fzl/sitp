@@ -126,6 +126,7 @@ class ReplayBuffer:
         self.state_shape = conf.state_shape
         self.obs_shape = conf.obs_shape
         self.gnn_node_count = getattr(conf, "gnn_node_count", 50)
+        self.si_predict_feature_dim = getattr(conf, "si_predict_feature_dim", 15)
         self.size = conf.buffer_size
 
         self.current_idx = 0
@@ -143,6 +144,10 @@ class ReplayBuffer:
             "u_onehot": np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
             "order_mask": np.empty([self.size, self.episode_limit, self.gnn_node_count]),
             "order_mask_": np.empty([self.size, self.episode_limit, self.gnn_node_count]),
+            "order_si_target": np.empty([self.size, self.episode_limit, self.n_actions]),
+            "si_predict_features": np.empty([self.size, self.episode_limit, self.si_predict_feature_dim]),
+            "final_station_times": np.empty([self.size, self.episode_limit, 4]),
+            "final_si": np.empty([self.size, self.episode_limit, 1]),
             "padded": np.empty([self.size, self.episode_limit, 1]),
             "terminated": np.empty([self.size, self.episode_limit, 1]),
         }
@@ -171,6 +176,19 @@ class ReplayBuffer:
             )
             self.buffers["order_mask_"][idxs] = episode_batch.get(
                 "order_mask_", np.zeros([batch_size, self.episode_limit, self.gnn_node_count])
+            )
+            self.buffers["order_si_target"][idxs] = episode_batch.get(
+                "order_si_target", np.zeros([batch_size, self.episode_limit, self.n_actions])
+            )
+            self.buffers["si_predict_features"][idxs] = episode_batch.get(
+                "si_predict_features",
+                np.zeros([batch_size, self.episode_limit, self.si_predict_feature_dim]),
+            )
+            self.buffers["final_station_times"][idxs] = episode_batch.get(
+                "final_station_times", np.zeros([batch_size, self.episode_limit, 4])
+            )
+            self.buffers["final_si"][idxs] = episode_batch.get(
+                "final_si", np.zeros([batch_size, self.episode_limit, 1])
             )
             self.buffers["padded"][idxs] = episode_batch["padded"]
             self.buffers["terminated"][idxs] = episode_batch["terminated"]
