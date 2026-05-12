@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from load_rerank import select_load_rerank_action
 from policy import QMIX
 from torch.distributions import Categorical
 
@@ -195,6 +196,39 @@ class Agents:
             load_penalty=load_penalty,
             predicted_si=predicted_si,
         )
+        load_rerank_action = None
+        load_rerank_record = None
+        if (
+            getattr(self.conf, "use_qatten_load_rerank", False)
+            and evaluate
+            and load_penalty is not None
+        ):
+            avail_mask = availible_actions if availible_actions.ndim == 1 else None
+            load_rerank_action, load_rerank_info = select_load_rerank_action(
+                q_value.detach().cpu().numpy().reshape(-1),
+                load_penalty=load_penalty,
+                agent_num=agent_num,
+                mode=getattr(self.conf, "qatten_load_rerank_mode", "margin_gated"),
+                margin_threshold=getattr(self.conf, "qatten_load_margin_threshold", 0.5),
+                topk=getattr(self.conf, "qatten_load_topk", 2),
+                penalty_weight=getattr(self.conf, "qatten_load_penalty_weight", 0.0),
+                avail_mask=avail_mask,
+            )
+            if (
+                agent_num == 0
+                and getattr(self.conf, "record_load_rerank_diagnostics", False)
+            ):
+                load_rerank_record = dict(load_rerank_info)
+                load_rerank_record["agent_id"] = int(agent_num)
+                load_rerank_record["penalty_weight"] = float(
+                    getattr(self.conf, "qatten_load_penalty_weight", 0.0)
+                )
+                load_rerank_record["margin_threshold"] = float(
+                    getattr(self.conf, "qatten_load_margin_threshold", 0.5)
+                )
+                load_rerank_record["topk"] = int(getattr(self.conf, "qatten_load_topk", 2))
+                if decision_context:
+                    load_rerank_record.update(decision_context)
         diagnostic_record = None
         if getattr(self.conf, "record_gnn_diagnostics", False) and self.policy.use_gnn:
             normal_graph = self.policy.get_eval_graph_embedding_numpy(force_zero=False)
@@ -318,8 +352,18 @@ class Agents:
 
         if (not evaluate) and np.random.uniform() < epsilon:
             action = int(np.random.choice(availible_actions_idx))
+        elif load_rerank_action is not None:
+            action = int(load_rerank_action)
         else:
             action = int(torch.argmax(q_value).item())
+        if load_rerank_record is not None:
+            load_rerank_record["executed_action"] = int(action)
+            load_rerank_record["executed_action_changed"] = int(
+                action != load_rerank_record["original_action"]
+            )
+            records = getattr(self.conf, "load_rerank_records", None)
+            if records is not None:
+                records.append(load_rerank_record)
         if diagnostic_record is not None:
             diagnostic_record["executed_action"] = int(action)
             diagnostic_record["executed_action_changed"] = int(action != diagnostic_record["zero_action"])

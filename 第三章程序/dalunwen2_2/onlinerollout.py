@@ -901,7 +901,10 @@ def generate_episode(agents, conf,pulses,thispulse,episode_num, SI,evaluate=Fals
                 current_order_mask = agents.policy.get_order_mask_numpy(current_order_candidates)
                 nowstation = allstation[station_id]
                 load_penalty_by_action = None
-                if getattr(conf, "gnn_use_load_penalty", False):
+                if (
+                    getattr(conf, "gnn_use_load_penalty", False)
+                    or getattr(conf, "use_qatten_load_rerank", False)
+                ):
                     load_penalty_by_action = estimate_action_load_penalty(
                         nowstation, air, current_order_candidates
                     )

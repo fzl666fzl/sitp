@@ -802,6 +802,18 @@ def get_station_times(allstation):
     return station_times
 
 
+def get_station_prefix_balance(allstation, station_id):
+    station_times = []
+    for idx in range(min(station_id + 1, station_num)):
+        station_time = 0.0
+        for team in allstation[idx].teams:
+            station_time = max(station_time, float(team.finishtime))
+        station_times.append(station_time)
+    if len(station_times) < 2:
+        return 0.0
+    return float(np.std(station_times))
+
+
 def get_final_reward(conf, this_pulse, smoothness_raw):
     smoothness = math.sqrt(smoothness_raw)
     smoothness_target = getattr(conf, "smoothness_reward_target", 30.0)
@@ -827,6 +839,36 @@ def get_final_reward(conf, this_pulse, smoothness_raw):
     if this_pulse < 700:
         return 0.5
     return -1
+
+
+def get_si_shaping_reward(conf, allstation, station_id, thispulse, balance_before=None):
+    if not getattr(conf, "use_si_shaping_reward", False):
+        return 0.0
+    beta = float(getattr(conf, "si_shaping_beta", 0.0))
+    if beta <= 0:
+        return 0.0
+
+    if getattr(conf, "si_shaping_mode", "level") == "delta":
+        if balance_before is None:
+            return 0.0
+        balance_after = get_station_prefix_balance(allstation, station_id)
+        local_balance_reward = (
+            float(balance_before) - float(balance_after)
+        ) / max(float(thispulse), 1.0)
+        return beta * local_balance_reward
+
+    completed_times = []
+    for idx in range(min(station_id + 1, station_num)):
+        station_time = 0.0
+        for team in allstation[idx].teams:
+            station_time = max(station_time, float(team.finishtime))
+        if station_time > 0:
+            completed_times.append(station_time)
+    if len(completed_times) < 2:
+        return 0.0
+
+    local_balance_reward = -float(np.std(completed_times)) / max(float(thispulse), 1.0)
+    return beta * local_balance_reward
 
 
 n_agents = 2
@@ -862,6 +904,7 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
     order_mask, order_mask_, order_si_target = [], [], []
     si_predict_features = []
     step_rewards = []
+    si_shaping_rewards = []
 
     allstation, station_list, air = reset_env(env, thispulse)
     reset_station(env, allstation, station_list)
@@ -926,6 +969,12 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
                 station_id = 3
             print('此时的站位为：', station_id)
             nowstation = allstation[station_id]
+            balance_before = None
+            if (
+                getattr(conf, "use_si_shaping_reward", False)
+                and getattr(conf, "si_shaping_mode", "level") == "delta"
+            ):
+                balance_before = get_station_prefix_balance(allstation, nowstation.id)
             current_si_predict_features = build_si_predict_features(
                 allstation,
                 nowstation,
@@ -944,7 +993,11 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
             next_order_candidates = get_available_orders(air)
             next_order_mask = agents.policy.get_order_mask_numpy(next_order_candidates)
             reward = get_reward(env.now, allstation, air, thispulse)
+            si_shaping_reward = get_si_shaping_reward(
+                conf, allstation, nowstation.id, thispulse, balance_before
+            )
             step_rewards.append(reward)
+            si_shaping_rewards.append(si_shaping_reward)
 
             o.append([state, state])
             s.append(state)
@@ -974,7 +1027,13 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
                 print(pr)
 
                 for _ in range(station_num):
-                    tmp = get_final_reward(conf, this_pulse, times)
+                    reward_idx = len(r)
+                    shaping = (
+                        si_shaping_rewards[reward_idx]
+                        if reward_idx < len(si_shaping_rewards)
+                        else 0.0
+                    )
+                    tmp = get_final_reward(conf, this_pulse, times) + shaping
                     r.append([tmp])
 
                 yield env.timeout(thispulse + 2000)
@@ -984,8 +1043,15 @@ def generate_episode(agents, conf, pulses, thispulse, episode_num, SI, evaluate=
 
     transition_len = len(o)
     if len(r) < transition_len:
-        for rr in step_rewards[:transition_len - len(r)]:
-            r.append([rr])
+        start_idx = len(r)
+        for offset, rr in enumerate(step_rewards[:transition_len - len(r)]):
+            shaping_idx = start_idx + offset
+            shaping = (
+                si_shaping_rewards[shaping_idx]
+                if shaping_idx < len(si_shaping_rewards)
+                else 0.0
+            )
+            r.append([rr + shaping])
     while len(r) < transition_len:
         r.append([0.0])
 
