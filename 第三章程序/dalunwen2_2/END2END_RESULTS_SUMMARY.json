@@ -1,0 +1,62 @@
+{
+  "end2end_main_result": {
+    "checkpoint": "online_balanced_best",
+    "eval_seed": 133,
+    "init_pulse": 608,
+    "final_pulse": 585.0,
+    "smoothness_index": 4.8602340478623285,
+    "score_pulse_plus_si": 589.8602340478624,
+    "station_times": [585.0, 573.1, 583.2, 576.4],
+    "finished_order_count": 50
+  },
+  "end2end_multiseed_10": {
+    "seeds": "100-109",
+    "pulse_mean": 590.135,
+    "pulse_median": 585.0,
+    "pulse_min": 585.0,
+    "pulse_max": 605.65,
+    "si_mean": 6.77377303299852,
+    "si_median": 4.8602340478623285,
+    "si_min": 4.8602340478623285,
+    "si_max": 12.694013106579018,
+    "si_le_5": 7,
+    "si_gt_10": 2,
+    "finished_50": 10,
+    "n": 10
+  },
+  "end2end_multiseed_50": {
+    "seeds": "100-149",
+    "pulse_mean": 591.6039999999999,
+    "pulse_median": 585.12,
+    "pulse_min": 585.0,
+    "pulse_max": 605.65,
+    "si_mean": 11.11822567326553,
+    "si_median": 4.894953478952078,
+    "si_min": 4.8602340478623285,
+    "si_max": 39.714775823992774,
+    "si_le_5": 26,
+    "si_gt_10": 12,
+    "finished_50": 50,
+    "n": 50
+  },
+  "qatten_checkpoint_5_multiseed_50": {
+    "seeds": "100-149",
+    "init_pulse": 608,
+    "pulse_mean": 614.988,
+    "pulse_median": 603.9,
+    "pulse_min": 603.9,
+    "pulse_max": 673.2,
+    "si_mean": 8.94847356,
+    "si_median": 3.181195,
+    "si_min": 3.181195,
+    "si_max": 53.680257,
+    "si_le_5": 42,
+    "si_gt_10": 8,
+    "n": 50
+  },
+  "notes": [
+    "End-to-end checkpoint weights and generated plots are intentionally not committed to GitHub.",
+    "The training-sampled best reached 567.6 / 4.25 but is not used as the main result because it is not fixed online greedy evaluation.",
+    "The main paper result should use online_balanced_best: 585.0 / 4.8602."
+  ]
+}
