@@ -175,27 +175,35 @@ class Agents:
         hidden_state = self.policy.eval_hidden[:, agent_num, :].clone()
         load_penalty = None
         predicted_si = None
+        combo_q_value = None
         if decision_context:
             load_penalty = decision_context.get("load_penalty_by_action")
             predicted_si = self.policy.predict_si_values_for_action_features(
                 obs, decision_context.get("si_predict_features_by_action")
             )
+            combo_q_value = self.policy.get_eval_combo_q_values(
+                obs, decision_context.get("combo_pair_features_by_action")
+            )
 
         inputs = torch.tensor(inputs, dtype=torch.float32).unsqueeze(0).to(self.device) # (42,) -> (1,42)
 
-        # get q value
-        q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_drqn_net(inputs, hidden_state)
-        q_value = self._mask_unavailable_actions(q_value, availible_actions)
-        raw_action_bias = self.policy.get_eval_action_bias(
-            order_candidates, agent_num, weight_override=1.0
-        )
-        q_value, action_bias, fusion_info = self._action_fusion(
-            q_value,
-            raw_action_bias,
-            agent_num,
-            load_penalty=load_penalty,
-            predicted_si=predicted_si,
-        )
+        if combo_q_value is None:
+            q_value, self.policy.eval_hidden[:, agent_num, :] = self.policy.eval_drqn_net(inputs, hidden_state)
+            q_value = self._mask_unavailable_actions(q_value, availible_actions)
+            raw_action_bias = self.policy.get_eval_action_bias(
+                order_candidates, agent_num, weight_override=1.0, avail_mask=availible_actions
+            )
+            q_value, action_bias, fusion_info = self._action_fusion(
+                q_value,
+                raw_action_bias,
+                agent_num,
+                load_penalty=load_penalty,
+                predicted_si=predicted_si,
+            )
+        else:
+            q_value = self._mask_unavailable_actions(combo_q_value, availible_actions)
+            action_bias = torch.zeros(self.n_actions, dtype=torch.float32, device=self.device)
+            fusion_info = {}
         load_rerank_action = None
         load_rerank_record = None
         if (
@@ -230,7 +238,11 @@ class Agents:
                 if decision_context:
                     load_rerank_record.update(decision_context)
         diagnostic_record = None
-        if getattr(self.conf, "record_gnn_diagnostics", False) and self.policy.use_gnn:
+        if (
+            getattr(self.conf, "record_gnn_diagnostics", False)
+            and self.policy.use_gnn
+            and not getattr(self.policy, "use_combo_scorer", False)
+        ):
             normal_graph = self.policy.get_eval_graph_embedding_numpy(force_zero=False)
             zero_graph = self.policy.get_eval_graph_embedding_numpy(force_zero=True)
             normal_inputs = np.hstack((base_inputs, normal_graph)) if normal_graph is not None else base_inputs
@@ -243,7 +255,11 @@ class Agents:
                 q_normal = self._mask_unavailable_actions(q_normal, availible_actions)
                 q_zero = self._mask_unavailable_actions(q_zero, availible_actions)
                 normal_raw_bias = self.policy.get_eval_action_bias(
-                    order_candidates, agent_num, force_zero=False, weight_override=1.0
+                    order_candidates,
+                    agent_num,
+                    force_zero=False,
+                    weight_override=1.0,
+                    avail_mask=availible_actions,
                 )
                 q_normal, gnn_bias, diagnostic_fusion_info = self._action_fusion(
                     q_normal,
@@ -386,16 +402,40 @@ class Agents:
                     break
         return max_episode_len
 
-    def train(self, batch, train_step, epsilon=None):
+    def train(
+        self,
+        batch,
+        train_step,
+        epsilon=None,
+        expert_batch=None,
+        td_weight=1.0,
+        imitation_weight=0.0,
+    ):
         # 不同的episode的数据长度不同，因此需要得到最大长度
         max_episode_len = self._get_max_episode_len(batch)
         # print("最大长度是",max_episode_len)
-        max_episode_len = 4
+        if getattr(self.conf, "action_mode", "rule") != "combo_proc_team":
+            max_episode_len = 4
         for key in batch.keys():
             batch[key] = batch[key][:, :max_episode_len]
 
+        if expert_batch is not None:
+            expert_max_episode_len = self._get_max_episode_len(expert_batch)
+            if getattr(self.conf, "action_mode", "rule") != "combo_proc_team":
+                expert_max_episode_len = 4
+            for key in expert_batch.keys():
+                expert_batch[key] = expert_batch[key][:, :expert_max_episode_len]
+
         completed_train_step = train_step + 1
-        self.policy.learn(batch, max_episode_len, completed_train_step, epsilon)
+        self.policy.learn(
+            batch,
+            max_episode_len,
+            completed_train_step,
+            epsilon,
+            expert_batch=expert_batch,
+            td_weight=td_weight,
+            imitation_weight=imitation_weight,
+        )
         if completed_train_step % self.conf.save_frequency == 0:
             self.policy.save_model(completed_train_step)
 

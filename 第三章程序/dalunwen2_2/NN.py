@@ -47,6 +47,48 @@ class ProcedureGraphEncoder(nn.Module):
         return self.node_embeddings().mean(dim=0)
 
 
+class ComboActionScorer(nn.Module):
+    def __init__(self, conf):
+        super(ComboActionScorer, self).__init__()
+        self.conf = conf
+        embed_dim = conf.gnn_embed_dim
+        hidden_dim = getattr(conf, "combo_scorer_hidden_dim", 128)
+        self.n_actions = conf.n_actions
+        self.team_count = int(getattr(conf, "combo_team_count", 1))
+        self.pair_feature_dim = int(getattr(conf, "combo_pair_feature_dim", 14))
+        self.team_embedding = nn.Embedding(self.team_count, embed_dim)
+        self.state_proj = nn.Linear(conf.state_shape, embed_dim)
+        input_dim = embed_dim * 4 + self.pair_feature_dim
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+        team_ids = torch.arange(self.n_actions, dtype=torch.long) % self.team_count
+        self.register_buffer("combo_action_team_ids", team_ids)
+
+    def forward(self, node_embeddings, states, pair_features, proc_action_indices):
+        batch_size, episode_len, action_count, feature_dim = pair_features.shape
+        if action_count != self.n_actions or feature_dim != self.pair_feature_dim:
+            raise ValueError("invalid combo pair feature shape")
+
+        proc_emb = node_embeddings[proc_action_indices].view(1, 1, action_count, -1)
+        proc_emb = proc_emb.expand(batch_size, episode_len, -1, -1)
+        team_emb = self.team_embedding(self.combo_action_team_ids).view(1, 1, action_count, -1)
+        team_emb = team_emb.expand(batch_size, episode_len, -1, -1)
+        global_emb = node_embeddings.mean(dim=0).view(1, 1, 1, -1)
+        global_emb = global_emb.expand(batch_size, episode_len, action_count, -1)
+        state_emb = F.relu(self.state_proj(states.reshape(-1, states.shape[-1])))
+        state_emb = state_emb.view(batch_size, episode_len, 1, -1).expand(
+            batch_size, episode_len, action_count, -1
+        )
+        scorer_input = torch.cat([proc_emb, team_emb, global_emb, state_emb, pair_features], dim=-1)
+        scores = self.net(scorer_input).squeeze(-1)
+        return scores.unsqueeze(2)
+
+
 class StationTimePredictor(nn.Module):
     def __init__(self, input_shape, conf):
         super(StationTimePredictor, self).__init__()

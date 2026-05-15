@@ -127,6 +127,7 @@ class ReplayBuffer:
         self.obs_shape = conf.obs_shape
         self.gnn_node_count = getattr(conf, "gnn_node_count", 50)
         self.si_predict_feature_dim = getattr(conf, "si_predict_feature_dim", 15)
+        self.combo_pair_feature_dim = getattr(conf, "combo_pair_feature_dim", 14)
         self.size = conf.buffer_size
 
         self.current_idx = 0
@@ -144,6 +145,12 @@ class ReplayBuffer:
             "u_onehot": np.empty([self.size, self.episode_limit, self.n_agents, self.n_actions]),
             "order_mask": np.empty([self.size, self.episode_limit, self.gnn_node_count]),
             "order_mask_": np.empty([self.size, self.episode_limit, self.gnn_node_count]),
+            "combo_pair_features": np.empty(
+                [self.size, self.episode_limit, self.n_actions, self.combo_pair_feature_dim]
+            ),
+            "combo_pair_features_": np.empty(
+                [self.size, self.episode_limit, self.n_actions, self.combo_pair_feature_dim]
+            ),
             "order_si_target": np.empty([self.size, self.episode_limit, self.n_actions]),
             "si_predict_features": np.empty([self.size, self.episode_limit, self.si_predict_feature_dim]),
             "final_station_times": np.empty([self.size, self.episode_limit, 4]),
@@ -170,12 +177,27 @@ class ReplayBuffer:
             self.buffers["r"][idxs] = episode_batch["r"]
             self.buffers["o_"][idxs] = episode_batch["o_"]
             self.buffers["s_"][idxs] = episode_batch["s_"]
+            if getattr(self.conf, "action_mode", "rule") == "combo_proc_team":
+                self.buffers["avail_u"][idxs] = episode_batch["avail_u"]
+                self.buffers["avail_u_"][idxs] = episode_batch["avail_u_"]
             self.buffers["u_onehot"][idxs] = episode_batch["u_onehot"]
             self.buffers["order_mask"][idxs] = episode_batch.get(
                 "order_mask", np.zeros([batch_size, self.episode_limit, self.gnn_node_count])
             )
             self.buffers["order_mask_"][idxs] = episode_batch.get(
                 "order_mask_", np.zeros([batch_size, self.episode_limit, self.gnn_node_count])
+            )
+            self.buffers["combo_pair_features"][idxs] = episode_batch.get(
+                "combo_pair_features",
+                np.zeros(
+                    [batch_size, self.episode_limit, self.n_actions, self.combo_pair_feature_dim]
+                ),
+            )
+            self.buffers["combo_pair_features_"][idxs] = episode_batch.get(
+                "combo_pair_features_",
+                np.zeros(
+                    [batch_size, self.episode_limit, self.n_actions, self.combo_pair_feature_dim]
+                ),
             )
             self.buffers["order_si_target"][idxs] = episode_batch.get(
                 "order_si_target", np.zeros([batch_size, self.episode_limit, self.n_actions])
